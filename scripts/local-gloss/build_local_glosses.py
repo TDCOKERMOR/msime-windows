@@ -156,12 +156,15 @@ def load_done(path: Path) -> dict[str, set[str]]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", required=True)
-    parser.add_argument("--out", required=True)
+    parser.add_argument("--out", default="", help="仅作记录；真正写库的是 merge_glosses.py")
     parser.add_argument("--tsv", default="glosses.tsv")
     parser.add_argument("--langs", default="fr,ja,es,ru,de,ko,th,vi,it")
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--batch", type=int, default=120)
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--order", choices=("alpha", "weight"), default="alpha",
+                        help="alpha = 按词头字典序；weight = 按拼音词典词频权重降序（高频优先）")
+    parser.add_argument("--msime", default="", help="--order weight 时要读的 msime.db")
     parser.add_argument("--model", default=os.environ.get("OH_MODEL", "hy-mt2-pro"))
     parser.add_argument("--base", default=os.environ.get("OH_BASE", "https://tokenhub.tencentmaas.com/v1"))
     args = parser.parse_args()
@@ -171,7 +174,24 @@ def main() -> None:
         sys.exit("OH_KEY is not set")
 
     source = sqlite3.connect(f"file:{args.source}?mode=ro", uri=True)
-    rows = source.execute("SELECT chinese, english_gloss FROM zh_en_glosses ORDER BY chinese").fetchall()
+    rows = source.execute("SELECT chinese, english_gloss FROM zh_en_glosses").fetchall()
+    if args.order == "weight":
+        if not args.msime:
+            sys.exit("--order weight needs --msime")
+        msime = sqlite3.connect(f"file:{args.msime}?mode=ro", uri=True)
+        wanted = {row[0] for row in rows}
+        weights: dict[str, int] = {}
+        tables = [r[0] for r in msime.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name GLOB 'tbl_*_[a-z]'")]
+        for table in tables:
+            for value, weight in msime.execute(f'SELECT value,weight FROM "{table}"'):
+                if value in wanted and weight and weight > weights.get(value, 0):
+                    weights[value] = weight
+        rows.sort(key=lambda row: (-weights.get(row[0], 0), row[0]))
+        covered = sum(1 for row in rows if row[0] in weights)
+        print(f"ranked by pinyin weight: {covered} of {len(rows)} headwords carry one", flush=True)
+    else:
+        rows.sort()
     if args.limit:
         rows = rows[: args.limit]
     print(f"headwords: {len(rows)}", flush=True)
