@@ -119,8 +119,31 @@ std::string EnglishDictionary::query_english_gloss(const std::string &chinese)
     return chinese.empty() || !ensure_gloss_statements() ? std::string{} : QueryGloss(zh_en_statement_, chinese);
 }
 
+std::string EnglishDictionary::query_target_gloss(const std::string &chinese, const std::string &language)
+{
+    if (language.empty() || language == "en")
+        return query_english_gloss(chinese);
+    // custom_zh_en_ 是人工维护的英语释义，不能当真它别的语种。
+    if (chinese.empty() || !ensure_target_gloss_statement())
+        return {};
+    sqlite3_reset(zh_target_statement_);
+    sqlite3_clear_bindings(zh_target_statement_);
+    if (sqlite3_bind_text(zh_target_statement_, 1, chinese.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
+        sqlite3_bind_text(zh_target_statement_, 2, language.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK)
+        return {};
+    std::string result;
+    if (sqlite3_step(zh_target_statement_) == SQLITE_ROW)
+    {
+        const auto *value = reinterpret_cast<const char *>(sqlite3_column_text(zh_target_statement_, 0));
+        if (value != nullptr)
+            result = value;
+    }
+    sqlite3_reset(zh_target_statement_);
+    return result;
+}
+
 bool EnglishDictionary::upsert_gloss(const std::string &db_path, bool chinese_to_english, const std::string &key,
-                                     const std::string &gloss)
+                                     const std::string &gloss, const std::string &language)
 {
     if (db_path.empty() || key.empty() || gloss.empty() || !ensure_schema(db_path))
         return false;
@@ -134,12 +157,22 @@ bool EnglishDictionary::upsert_gloss(const std::string &db_path, bool chinese_to
     }
     sqlite3_busy_timeout(database, 250);
     sqlite3_stmt *statement = nullptr;
-    const char *sql = chinese_to_english ? "INSERT OR REPLACE INTO zh_en_glosses(chinese,english_gloss) VALUES(?1,?2)"
-                                         : "INSERT OR REPLACE INTO en_zh_glosses(english,chinese_gloss) VALUES(?1,?2)";
+    // 非英语目标语种落在 zh_glosses(chinese, lang, gloss)，与英语目标同等的“本地优先”。
+    const bool target_language = chinese_to_english && !language.empty() && language != "en";
+    const char *sql = target_language
+                          ? "INSERT OR REPLACE INTO zh_glosses(chinese,lang,gloss) VALUES(?1,?2,?3)"
+                          : (chinese_to_english ? "INSERT OR REPLACE INTO zh_en_glosses(chinese,english_gloss) "
+                                                  "VALUES(?1,?2)"
+                                                : "INSERT OR REPLACE INTO en_zh_glosses(english,chinese_gloss) "
+                                                  "VALUES(?1,?2)");
     bool ok = sqlite3_prepare_v2(database, sql, -1, &statement, nullptr) == SQLITE_OK &&
-              sqlite3_bind_text(statement, 1, key.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
-              sqlite3_bind_text(statement, 2, gloss.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
-              sqlite3_step(statement) == SQLITE_DONE;
+              sqlite3_bind_text(statement, 1, key.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK;
+    if (ok && target_language)
+        ok = sqlite3_bind_text(statement, 2, language.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+             sqlite3_bind_text(statement, 3, gloss.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK;
+    else if (ok)
+        ok = sqlite3_bind_text(statement, 2, gloss.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK;
+    ok = ok && sqlite3_step(statement) == SQLITE_DONE;
     if (statement != nullptr)
         sqlite3_finalize(statement);
     sqlite3_close(database);
@@ -278,7 +311,10 @@ bool EnglishDictionary::ensure_schema(const std::string &db_path)
                      "english TEXT COLLATE BINARY PRIMARY KEY,chinese_gloss TEXT NOT NULL) WITHOUT ROWID;"
                      "CREATE TABLE IF NOT EXISTS zh_en_glosses("
                      "chinese TEXT COLLATE BINARY PRIMARY KEY,english_gloss TEXT NOT NULL) WITHOUT ROWID;"
-                     "PRAGMA user_version=3;",
+                     "CREATE TABLE IF NOT EXISTS zh_glosses("
+                     "chinese TEXT COLLATE BINARY NOT NULL,lang TEXT COLLATE BINARY NOT NULL,"
+                     "gloss TEXT NOT NULL,PRIMARY KEY(chinese,lang)) WITHOUT ROWID;"
+                     "PRAGMA user_version=4;",
                      nullptr, nullptr, nullptr) == SQLITE_OK;
     sqlite3_close(database);
     return gloss_tables_ok;
@@ -330,8 +366,30 @@ bool EnglishDictionary::ensure_gloss_statements()
     return true;
 }
 
+bool EnglishDictionary::ensure_target_gloss_statement()
+{
+    if (zh_target_statement_ != nullptr)
+        return true;
+    // 旧词库没有 zh_glosses：记下来，别每次候选刷新都重试一次 prepare。
+    if (zh_target_unavailable_ || !ensure_query_statement())
+        return false;
+    if (sqlite3_prepare_v2(db_, "SELECT gloss FROM zh_glosses WHERE chinese=?1 AND lang=?2", -1,
+                           &zh_target_statement_, nullptr) != SQLITE_OK)
+    {
+        zh_target_statement_ = nullptr;
+        zh_target_unavailable_ = true;
+        return false;
+    }
+    return true;
+}
+
 void EnglishDictionary::close_database()
 {
+    if (zh_target_statement_ != nullptr)
+    {
+        sqlite3_finalize(zh_target_statement_);
+        zh_target_statement_ = nullptr;
+    }
     if (en_zh_statement_ != nullptr)
     {
         sqlite3_finalize(en_zh_statement_);
