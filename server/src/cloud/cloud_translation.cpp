@@ -201,12 +201,13 @@ std::optional<ResolvedProvider> ResolveActiveProvider(const TranslationConfig &c
 void PersistGloss(const EnglishIme::TranslationQuery &query, const std::string &gloss,
                   const std::string &target_language)
 {
-    // english.db is language-specific. Other target languages remain in the
-    // in-memory cloud cache only.
-    if (target_language != "en" || g_db_path.empty() || !CloudTranslation::ShouldPersistGloss(query.key, gloss))
+    if (g_db_path.empty() || !CloudTranslation::ShouldPersistGloss(query.key, gloss))
         return;
+    // 和英语一样：查得到就入本地库。英语落 zh_en_glosses，其余语种落
+    // zh_glosses(chinese, lang, gloss)，下次同一个词不再问云端。
     const bool chinese_to_english = query.direction == EnglishIme::TranslationDirection::ChineseToEnglish;
-    EnglishDictionary::upsert_gloss(g_db_path, chinese_to_english, query.key, gloss);
+    EnglishDictionary::upsert_gloss(g_db_path, chinese_to_english, query.key, gloss,
+                                    chinese_to_english ? target_language : std::string{});
 }
 
 void ApplyTranslatedGroup(const std::vector<EnglishIme::TranslationQuery> &group,
