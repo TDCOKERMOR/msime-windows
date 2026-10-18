@@ -308,14 +308,24 @@ ApiCredentialTest::Result TestTranslation(const ApiCredentialTest::Request &requ
     }
     else
     {
-        const CustomTranslation::Config config{Value(request, "endpoint"), Value(request, "apiKey")};
+        CustomTranslation::Config config;
+        config.endpoint = Value(request, "endpoint");
+        config.api_key = Value(request, "apiKey");
+        config.model = Value(request, "model");
+        config.prompt = Value(request, "prompt");
+        const std::string format = Value(request, "format");
+        config.format = (format == "responses" || format == "anthropic" || format == "gemini" || format == "deeplx")
+                            ? format
+                            : "openai";
         if (!CustomTranslation::IsSupportedEndpoint(config.endpoint))
             return {false, "请先填写有效的翻译接口地址。"};
         translated = CustomTranslation::TextTranslateBatch(config, {"测试"}, "ZH", "EN");
     }
     if (!translated.empty() && !translated.front().empty())
         return {true, "连接成功，翻译服务配置有效。"};
-    return {false, "测试失败：服务未返回有效译文，请检查凭据、接口地址和网络。"};
+    const std::string detail = CustomTranslation::LastError();
+    return {false, detail.empty() ? "测试失败：服务未返回有效译文，请检查凭据、接口地址和网络。"
+                                  : "测试失败：" + detail};
 }
 } // namespace
 
