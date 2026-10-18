@@ -5,6 +5,7 @@ export type CredentialTestService =
   | 'translation.tencent'
   | 'translation.niutrans'
   | 'translation.custom'
+  | 'translation.openai'
   | 'voice.asr'
   | 'voice.polish'
   | 'ai.assistant';
@@ -42,7 +43,7 @@ export function setupCredentialTest(
     status.dataset.kind = 'pending';
     window.chrome.webview.postMessage(serializeHostMessage({
       type: 'apiCredentialTest',
-      data: { requestId: pendingRequestId, service: service(), config: readConfig() }
+      data: { requestId: pendingRequestId, service: service() as never, config: readConfig() }
     }));
   });
 }

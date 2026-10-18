@@ -407,3 +407,39 @@
 .toggle-section-disabled-hint.is-hidden {
   display: none;
 }
+
+.translation-prompt-input {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #3a3a3a);
+  border-radius: 6px;
+  background: var(--surface-2, transparent);
+  color: inherit;
+  font: inherit;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+
+/* 翻译提示词：左选槽、右输入，和 AI 辅助的自定义提示词一致 */
+.translation-prompt-block {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.translation-prompt-block .translation-api-field {
+  margin: 0;
+}
+
+.translation-prompt-block > .translation-api-field:first-child {
+  width: 168px;
+  flex: 0 0 168px;
+}
+
+.translation-prompt-block .translation-api-field-wide {
+  flex: 1 1 auto;
+  min-width: 0;
+}

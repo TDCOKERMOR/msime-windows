@@ -8,7 +8,6 @@ namespace CloudTranslation
 {
 namespace
 {
-constexpr size_t kMaxPersistChars = 32;
 
 bool IsAsciiSpace(unsigned char ch)
 {
@@ -82,11 +81,11 @@ std::string FormatGloss(const std::string &text)
     return collapsed;
 }
 
-bool ShouldPersistGloss(const std::string &key, const std::string &formatted)
+bool ShouldPersistGloss(const std::string &key, const std::string &formatted, size_t max_chars)
 {
     if (formatted.empty() || key.empty())
         return false;
-    if (Utf8Length(formatted) > kMaxPersistChars)
+    if (Utf8Length(formatted) > max_chars)
         return false;
     return AsciiLower(formatted) != AsciiLower(key);
 }

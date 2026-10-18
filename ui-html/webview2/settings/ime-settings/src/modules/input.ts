@@ -2,18 +2,46 @@ import { serializeHostMessage } from '../../../../shared/messages';
 import { applyDropdownValue, applyToggleState, setFuzzyRuleOptionsDisabled, setSmartPunctuationOptionsDisabled, setupDropdownMenu, setupNeuralModelControls, setupToggleButton } from './shared';
 import { updateConfig } from './config-sync';
 import { updateCandidatePreviewHelpcode } from './appearance';
-import { setupCredentialTest } from './credential-test';
+import { setupCredentialTest, type CredentialTestService } from './credential-test';
 import { onHostMessage } from '../utils/host-messages';
 import { hoistOverlay } from '../utils/overlay-host';
 
 type InputScheme = 'quanpin' | 'shuangpin' | 'wubi';
 type InputMode = 'chinese' | 'japanese';
 
-type TranslationProvider = 'tencent' | 'niutrans' | 'custom';
+// 在线翻译只剩一种格式：OpenAI 兼容的 Chat Completions。
+type TranslationProvider = 'openai';
+
+// 在线翻译支持的四种协议格式。endpoint 里的 {model} 会被模型名替换。
+type WireFormat = 'openai' | 'responses' | 'anthropic' | 'gemini';
+const PROTOCOLS: Record<WireFormat, { endpoint: string; model: string; hint: string }> = {
+  openai: {
+    endpoint: 'https://api.openai.com/v1/chat/completions',
+    model: 'gpt-4o-mini',
+    hint: 'POST /chat/completions，Authorization: Bearer'
+  },
+  responses: {
+    endpoint: 'https://api.openai.com/v1/responses',
+    model: 'gpt-4.1-mini',
+    hint: 'POST /responses，输入用 instructions + input'
+  },
+  anthropic: {
+    endpoint: 'https://api.anthropic.com/v1/messages',
+    model: 'claude-sonnet-4-5',
+    hint: 'POST /v1/messages，x-api-key + anthropic-version'
+  },
+  gemini: {
+    endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
+    model: 'gemini-2.5-flash',
+    hint: 'POST generateContent，x-goog-api-key；地址里的 {model} 会被替换'
+  }
+};
+let wireFormat: WireFormat = 'openai';
+// 翻译提示词三槽，prompt 始终是当前槽的内容。
+let promptSlot = 'custom_1';
+let promptSlots: Record<string, string> = { custom_1: '', custom_2: '', custom_3: '' };
 
 let applyingInputConfig = false;
-let customTranslationEnabled = false;
-let niutransTranslationEnabled = false;
 
 const SHUANGPIN_REFRESH_TIMEOUT_MS = 5000;
 let shuangpinToastTimer: number | null = null;
@@ -174,57 +202,45 @@ function syncCandidateTranslationOptions(enabled: boolean): void {
 }
 
 function activeTranslationProvider(): TranslationProvider {
-  if (niutransTranslationEnabled) return 'niutrans';
-  if (customTranslationEnabled) return 'custom';
-  return 'tencent';
+  return 'openai';
 }
 
 function inputValue(id: string): string {
   return (document.getElementById(id) as HTMLInputElement | null)?.value.trim() ?? '';
 }
 
+function applyTranslationPlaceholders(): void {
+  const preset = PROTOCOLS[wireFormat];
+  const endpoint = document.getElementById('openaiTranslationEndpoint') as HTMLInputElement | null;
+  const model = document.getElementById('openaiTranslationModel') as HTMLInputElement | null;
+  if (endpoint) endpoint.placeholder = preset.endpoint;
+  if (model) model.placeholder = preset.model;
+  syncCandidateTranslationWarning();
+}
+
 function translationTestConfig(): Record<string, string> {
-  const provider = activeTranslationProvider();
-  if (provider === 'niutrans') {
-    return { appId: inputValue('niutransAppId'), apiKey: inputValue('niutransApiKey') };
-  }
-  if (provider === 'custom') {
-    return { endpoint: inputValue('customTranslationEndpoint'), apiKey: inputValue('customTranslationApiKey') };
-  }
-  return { secretId: inputValue('tencentTmtSecretId'), secretKey: inputValue('tencentTmtSecretKey') };
+  return {
+    endpoint: inputValue('openaiTranslationEndpoint'),
+    apiKey: inputValue('openaiTranslationApiKey'),
+    model: inputValue('openaiTranslationModel'),
+    prompt: (document.getElementById('openaiTranslationPrompt') as HTMLTextAreaElement | null)?.value.trim() ?? '',
+    format: wireFormat
+  };
 }
 
 function syncCandidateTranslationWarning(): void {
   const warning = document.getElementById('candidateTranslationApiWarning');
   if (!warning) return;
-  const provider = activeTranslationProvider();
-  if (provider === 'custom') {
-    const endpoint = (document.getElementById('customTranslationEndpoint') as HTMLInputElement | null)?.value.trim();
-    const valid = /^https?:\/\/\S+$/i.test(endpoint ?? '');
-    warning.textContent = '请填写以 http:// 或 https:// 开头的完整接口地址';
-    warning.classList.toggle('is-hidden', valid);
-    return;
-  }
-  if (provider === 'niutrans') {
-    const appId = (document.getElementById('niutransAppId') as HTMLInputElement | null)?.value.trim();
-    const apiKey = (document.getElementById('niutransApiKey') as HTMLInputElement | null)?.value.trim();
-    warning.textContent = '请填写 APP ID 和 API Key 后使用小牛翻译';
-    warning.classList.toggle('is-hidden', Boolean(appId && apiKey));
-    return;
-  }
-  const secretId = (document.getElementById('tencentTmtSecretId') as HTMLInputElement | null)?.value.trim();
-  const secretKey = (document.getElementById('tencentTmtSecretKey') as HTMLInputElement | null)?.value.trim();
-  warning.textContent = '请填写 SecretId 和 SecretKey 后使用云端翻译';
-  warning.classList.toggle('is-hidden', Boolean(secretId && secretKey));
+  const endpoint = (document.getElementById('openaiTranslationEndpoint') as HTMLInputElement | null)?.value.trim();
+  const model = (document.getElementById('openaiTranslationModel') as HTMLInputElement | null)?.value.trim();
+  const validEndpoint = /^https?:\/\/\S+$/i.test(endpoint ?? '');
+  warning.textContent = validEndpoint
+    ? '请填写模型名称（例如 gpt-4o-mini）'
+    : '请填写以 http:// 或 https:// 开头的完整 Chat Completions 接口地址';
+  warning.classList.toggle('is-hidden', Boolean(validEndpoint && model));
 }
 
-function syncTranslationProviderView(provider: TranslationProvider): void {
-  const tencentFields = document.getElementById('tencentTranslationFields');
-  const niutransFields = document.getElementById('niutransTranslationFields');
-  const customFields = document.getElementById('customTranslationFields');
-  if (tencentFields) tencentFields.hidden = provider !== 'tencent';
-  if (niutransFields) niutransFields.hidden = provider !== 'niutrans';
-  if (customFields) customFields.hidden = provider !== 'custom';
+function syncTranslationProviderView(_provider: TranslationProvider): void {
   syncCandidateTranslationWarning();
 }
 
@@ -235,10 +251,6 @@ function refreshTranslationProvider(): void {
 }
 
 export function applyTencentTmtConfig(config: Record<string, unknown> | undefined): void {
-  const secretId = document.getElementById('tencentTmtSecretId') as HTMLInputElement | null;
-  const secretKey = document.getElementById('tencentTmtSecretKey') as HTMLInputElement | null;
-  if (secretId && typeof config?.secret_id === 'string') secretId.value = config.secret_id;
-  if (secretKey && typeof config?.secret_key === 'string') secretKey.value = config.secret_key;
   applyDropdownValue(
     'translationTargetLanguageBtn',
     'translationTargetLanguageMenu',
@@ -248,21 +260,35 @@ export function applyTencentTmtConfig(config: Record<string, unknown> | undefine
 }
 
 export function applyCustomTranslationConfig(config: Record<string, unknown> | undefined): void {
-  customTranslationEnabled = config?.enabled === true;
-  const endpoint = document.getElementById('customTranslationEndpoint') as HTMLInputElement | null;
-  const apiKey = document.getElementById('customTranslationApiKey') as HTMLInputElement | null;
+  const format = typeof config?.format === 'string' ? config.format : 'openai';
+  wireFormat = (format === 'responses' || format === 'anthropic' || format === 'gemini') ? format : 'openai';
+  applyDropdownValue('translationProviderBtn', 'translationProviderMenu', wireFormat);
+  const endpoint = document.getElementById('openaiTranslationEndpoint') as HTMLInputElement | null;
+  const apiKey = document.getElementById('openaiTranslationApiKey') as HTMLInputElement | null;
+  const model = document.getElementById('openaiTranslationModel') as HTMLInputElement | null;
+  const prompt = document.getElementById('openaiTranslationPrompt') as HTMLTextAreaElement | null;
   if (endpoint && typeof config?.endpoint === 'string') endpoint.value = config.endpoint;
   if (apiKey && typeof config?.api_key === 'string') apiKey.value = config.api_key;
+  if (model && typeof config?.model === 'string') model.value = config.model;
+  promptSlots = {
+    custom_1: typeof config?.prompt_custom_1 === 'string' ? config.prompt_custom_1 : '',
+    custom_2: typeof config?.prompt_custom_2 === 'string' ? config.prompt_custom_2 : '',
+    custom_3: typeof config?.prompt_custom_3 === 'string' ? config.prompt_custom_3 : ''
+  };
+  // 旧配置只有单槽 prompt，迁到第一槽。
+  if (!promptSlots.custom_1 && typeof config?.prompt === 'string') promptSlots.custom_1 = config.prompt;
+  promptSlot =
+    config?.prompt_id === 'custom_2' || config?.prompt_id === 'custom_3'
+      ? (config.prompt_id as string)
+      : 'custom_1';
+  applyDropdownValue('translationPromptSlotBtn', 'translationPromptSlotMenu', promptSlot);
+  if (prompt) prompt.value = promptSlots[promptSlot] ?? '';
+  applyTranslationPlaceholders();
   refreshTranslationProvider();
 }
 
-export function applyNiuTransConfig(config: Record<string, unknown> | undefined): void {
-  niutransTranslationEnabled = config?.enabled === true;
-  const appId = document.getElementById('niutransAppId') as HTMLInputElement | null;
-  const apiKey = document.getElementById('niutransApiKey') as HTMLInputElement | null;
-  if (appId && typeof config?.app_id === 'string') appId.value = config.app_id;
-  if (apiKey && typeof config?.apikey === 'string') apiKey.value = config.apikey;
-  refreshTranslationProvider();
+export function applyNiuTransConfig(_config: Record<string, unknown> | undefined): void {
+  // 小牛翻译已从界面移除，旧配置保留在文件里但不再影响候选词翻译。
 }
 
 function setupSecretVisibility(inputId: string, buttonId: string, name: string): void {
@@ -400,25 +426,19 @@ export function setupInput(): void {
   document.getElementById('translationProviderMenu')?.addEventListener('click', (event: Event) => {
     const item = (event.target as HTMLElement | null)?.closest<HTMLElement>('.dropdown-item');
     if (!item) return;
-    const provider: TranslationProvider = item.dataset.value === 'niutrans'
-      ? 'niutrans'
-      : item.dataset.value === 'custom'
-        ? 'custom'
-        : 'tencent';
-    niutransTranslationEnabled = provider === 'niutrans';
-    customTranslationEnabled = provider === 'custom';
-    syncTranslationProviderView(provider);
-    // Only one provider is active; keep the mutually-exclusive flags in sync.
-    updateConfig('niutrans.enabled', niutransTranslationEnabled);
-    updateConfig('custom_translation.enabled', customTranslationEnabled);
+    const value = item.dataset.value;
+    if (value !== 'openai' && value !== 'responses' && value !== 'anthropic' && value !== 'gemini') return;
+    wireFormat = value;
+    // 只换占位提示，不覆盖已填的地址和模型。
+    applyTranslationPlaceholders();
+    syncTranslationProviderView('openai');
+    updateConfig('custom_translation.format', wireFormat);
+    updateConfig('custom_translation.enabled', true);
   });
   const translationFields: Record<string, string> = {
-    tencentTmtSecretId: 'tencent_tmt.secret_id',
-    tencentTmtSecretKey: 'tencent_tmt.secret_key',
-    niutransAppId: 'niutrans.app_id',
-    niutransApiKey: 'niutrans.apikey',
-    customTranslationEndpoint: 'custom_translation.endpoint',
-    customTranslationApiKey: 'custom_translation.api_key'
+    openaiTranslationEndpoint: 'custom_translation.endpoint',
+    openaiTranslationApiKey: 'custom_translation.api_key',
+    openaiTranslationModel: 'custom_translation.model'
   };
   Object.entries(translationFields).forEach(([id, path]) => {
     const input = document.getElementById(id) as HTMLInputElement | null;
@@ -428,13 +448,30 @@ export function setupInput(): void {
       syncCandidateTranslationWarning();
     });
   });
-  setupSecretVisibility('tencentTmtSecretKey', 'tencentTmtSecretKeyVisibility', 'SecretKey');
-  setupSecretVisibility('niutransApiKey', 'niutransApiKeyVisibility', 'API Key');
-  setupSecretVisibility('customTranslationApiKey', 'customTranslationApiKeyVisibility', 'API Key');
+  setupDropdownMenu('translationPromptSlotBtn', 'translationPromptSlotMenu', '', false);
+  document.getElementById('translationPromptSlotMenu')?.addEventListener('click', (event: Event) => {
+    const item = (event.target as HTMLElement | null)?.closest<HTMLElement>('.dropdown-item');
+    if (!item) return;
+    const value = item.dataset.value;
+    if (value !== 'custom_1' && value !== 'custom_2' && value !== 'custom_3') return;
+    const textarea = document.getElementById('openaiTranslationPrompt') as HTMLTextAreaElement | null;
+    // 切槽前先把当前输入存回原槽。
+    if (textarea) promptSlots[promptSlot] = textarea.value;
+    promptSlot = value;
+    applyDropdownValue('translationPromptSlotBtn', 'translationPromptSlotMenu', promptSlot);
+    if (textarea) textarea.value = promptSlots[promptSlot] ?? '';
+    updateConfig('custom_translation.prompt_id', promptSlot);
+  });
+  const translationPrompt = document.getElementById('openaiTranslationPrompt') as HTMLTextAreaElement | null;
+  translationPrompt?.addEventListener('change', () => {
+    promptSlots[promptSlot] = translationPrompt.value;
+    updateConfig(`custom_translation.prompt_custom_${promptSlot.slice(-1)}`, translationPrompt.value);
+  });
+  setupSecretVisibility('openaiTranslationApiKey', 'openaiTranslationApiKeyVisibility', 'API Key');
   setupCredentialTest(
     'candidateTranslationTestButton',
     'candidateTranslationTestStatus',
-    () => `translation.${activeTranslationProvider()}`,
+    () => 'translation.custom' as CredentialTestService,
     translationTestConfig
   );
   setupToggleButton('cloudCandidatesToggleBtn', (active) => {

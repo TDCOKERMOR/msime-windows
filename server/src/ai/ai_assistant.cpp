@@ -2,6 +2,7 @@
 #include "ai_assistant_cache.h"
 #include "ai_assistant_cache_key.h"
 #include "ai_assistant_request.h"
+#include "cloud/ai_wire.h"
 
 #include "utils/network_proxy.h"
 #include <curl/curl.h>
@@ -52,12 +53,17 @@ std::string Fetch(const AiAssistant::Request &request, uint64_t generation)
     if (!curl)
         return {};
     std::string response;
-    const std::string authorization = "Authorization: Bearer " + config.token;
+    const auto wire = AiWire::FromId(config.provider);
+    const std::string url = AiWire::NormalizeEndpoint(config.endpoint, wire, config.model);
     curl_slist *headers = nullptr;
     headers = curl_slist_append(headers, "Content-Type: application/json");
-    headers = curl_slist_append(headers, authorization.c_str());
+    std::vector<std::string> auth_lines;
+    for (const auto &header : AiWire::AuthHeaders(wire, config.token))
+        auth_lines.push_back(header.name + ": " + header.value);
+    for (const auto &line : auth_lines)
+        headers = curl_slist_append(headers, line.c_str());
     const std::string payload = body.dump();
-    curl_easy_setopt(curl, CURLOPT_URL, config.endpoint.c_str());
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     NetworkProxy::ApplyToCurl(curl);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.c_str());
@@ -86,8 +92,9 @@ std::string Fetch(const AiAssistant::Request &request, uint64_t generation)
 
     try
     {
-        const auto outer = nlohmann::json::parse(response);
-        const std::string content = outer.at("choices").at(0).at("message").at("content").get<std::string>();
+        const std::string content = AiWire::ExtractText(wire, response);
+        if (content.empty())
+            return {};
         const auto result_json = nlohmann::json::parse(content);
         const auto &candidates = result_json.at("candidates");
         if (!candidates.is_array() || candidates.empty())

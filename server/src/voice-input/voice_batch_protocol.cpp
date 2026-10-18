@@ -1,5 +1,6 @@
 #include "voice_batch_protocol.h"
 #include "voice_providers.h"
+#include "cloud/ai_wire.h"
 #include <msime/voice/wav_writer.h>
 #include <nlohmann/json.hpp>
 
@@ -33,20 +34,23 @@ metasequoia::voice::MultipartRequest BuildBatchTranscription(const std::vector<f
 
 std::string BuildBatchPolish(const std::string &text, const VoiceInputConfig &config)
 {
-    auto body = nlohmann::json::parse(metasequoia::voice::make_polish_request(
-        ResolvePolishModel(config), ResolvePolishSystemPrompt(config), WrapAsrUserMessage(text)));
-    if (config.polish_provider == "siliconflow")
+    const auto wire = AiWire::FromId(config.polish_provider);
+    auto body = AiWire::BuildBody(wire, ResolvePolishModel(config), ResolvePolishSystemPrompt(config),
+                                  WrapAsrUserMessage(text), 512, 0.2);
+    if (wire == AiWire::Wire::Chat)
     {
-        body["enable_thinking"] = false;
-    }
-    else if (UsesDeepSeekThinking(config.polish_provider, config.polish_thinking))
-    {
-        body["thinking"] = {{"type", "enabled"}};
-        body["reasoning_effort"] = config.polish_thinking;
-    }
-    else if (config.polish_provider == "deepseek")
-    {
-        body["thinking"] = {{"type", "disabled"}};
+        body["stream"] = false;
+        if (config.polish_provider == "siliconflow")
+            body["enable_thinking"] = false;
+        else if (UsesDeepSeekThinking(config.polish_provider, config.polish_thinking))
+        {
+            body["thinking"] = {{"type", "enabled"}};
+            body["reasoning_effort"] = config.polish_thinking;
+        }
+        else if (config.polish_provider == "deepseek")
+        {
+            body["thinking"] = {{"type", "disabled"}};
+        }
     }
     return body.dump();
 }

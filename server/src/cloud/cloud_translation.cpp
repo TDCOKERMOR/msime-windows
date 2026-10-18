@@ -20,6 +20,13 @@ namespace
 constexpr auto kIdleDelay = std::chrono::milliseconds(500);
 constexpr auto kNegativeTtl = std::chrono::minutes(8);
 constexpr size_t kMaxSourceChars = 40;
+// 整句联想的候选是一整句话，不是词条。超过这个长度或带句读就按句子走：
+// 单独一批、单独的超时与输出上限；写回词库时用更宽的长度门。
+constexpr size_t kSentenceThreshold = 12;
+constexpr size_t kMaxSentenceChars = 200;
+// 写回词库的长度上限：词条 32，整句放宽到 128（中文一句常见 15–40 字，译成目标语种还会变长）。
+constexpr size_t kMaxPersistChars = 32;
+constexpr size_t kMaxPersistSentenceChars = 128;
 constexpr size_t kMaxCacheEntries = 4096;
 
 std::mutex g_mutex;
@@ -49,14 +56,14 @@ enum class Provider
     NiuTrans,
 };
 
-// Only one online provider is active at a time. NiuTrans and the custom DeepLX
-// endpoint override the Tencent default when enabled; NiuTrans wins if both are.
+// 只保留一个在线提供方：自定义的 OpenAI 兼容服务优先，旧的 NiuTrans / 腾讯云
+// 仅作为旧配置的回退路径保留。
 Provider ActiveProvider()
 {
-    if (GetConfiguredNiuTrans().enabled)
-        return Provider::NiuTrans;
     if (GetConfiguredCustomTranslation().enabled)
         return Provider::Custom;
+    if (GetConfiguredNiuTrans().enabled)
+        return Provider::NiuTrans;
     return Provider::Tencent;
 }
 
@@ -67,7 +74,9 @@ std::string ProviderScope()
     case Provider::NiuTrans:
         return "niutrans:" + GetConfiguredNiuTrans().app_id;
     case Provider::Custom:
-        return "custom:" + GetConfiguredCustomTranslation().endpoint;
+        return "custom:" + GetConfiguredCustomTranslation().endpoint + ":" +
+               (GetConfiguredCustomTranslation().format == "deeplx" ? std::string("deeplx")
+                                                                   : GetConfiguredCustomTranslation().model);
     case Provider::Tencent:
     default:
         return "tencent";
@@ -81,9 +90,32 @@ std::string Identity(const EnglishIme::TranslationQuery &query, const std::strin
            (query.direction == EnglishIme::TranslationDirection::EnglishToChinese ? "e:" : "z:") + query.key;
 }
 
+bool HasSentencePunctuation(const std::string &text)
+{
+    for (const char *mark : {"，", "。", "！", "？", "、", "；", "：", "…", "—", "“", "”", "《", "》"})
+    {
+        if (text.find(mark) != std::string::npos)
+            return true;
+    }
+    for (const char mark : {',', '.', '!', '?', ';'})
+    {
+        if (text.find(mark) != std::string::npos)
+            return true;
+    }
+    return false;
+}
+
+// 只有中文→目标语种那一路会问这句；英文候选都是单个单词。
+bool IsSentenceLike(const std::string &key)
+{
+    return CloudTranslation::Utf8Length(key) > kSentenceThreshold || HasSentencePunctuation(key);
+}
+
 bool TooLong(const std::string &key)
 {
-    return CloudTranslation::Utf8Length(key) > kMaxSourceChars;
+    // 原来一律卡 40 字：整句候选正好死在这条线上，一整个长句连请求都发不出去。
+    const size_t length = CloudTranslation::Utf8Length(key);
+    return length > (IsSentenceLike(key) ? kMaxSentenceChars : kMaxSourceChars);
 }
 
 void RememberPositive(const std::string &identity, std::string gloss)
@@ -136,7 +168,15 @@ CustomTranslation::Config ResolveCustomConfig()
     const auto &configured = GetConfiguredCustomTranslation();
     if (!configured.enabled)
         return {};
-    return {CloudTranslation::TrimSecret(configured.endpoint), CloudTranslation::TrimSecret(configured.api_key)};
+    CustomTranslation::Config resolved;
+    resolved.endpoint = CloudTranslation::TrimSecret(configured.endpoint);
+    resolved.api_key = CloudTranslation::TrimSecret(configured.api_key);
+    resolved.format = configured.format == "deeplx" ? "deeplx" : "openai";
+    resolved.model = CloudTranslation::TrimSecret(configured.model);
+    if (resolved.model.empty())
+        resolved.model = "gpt-4o-mini";
+    resolved.prompt = configured.prompt;
+    return resolved;
 }
 
 NiuTransTranslation::Config ResolveNiuTransConfig()
@@ -150,11 +190,17 @@ NiuTransTranslation::Config ResolveNiuTransConfig()
 void PersistGloss(const EnglishIme::TranslationQuery &query, const std::string &gloss,
                   const std::string &target_language)
 {
-    if (g_db_path.empty() || !CloudTranslation::ShouldPersistGloss(query.key, gloss))
+    if (g_db_path.empty())
         return;
-    // 和英语一样：查得到就入本地库。英语落 zh_en_glosses，其余语种落
-    // zh_glosses(chinese, lang, gloss)，下次同一个词不再问云端。
+    // 查得到就入本地库：词条进词表，整句也进——同一句话再打一次就不必再问云端。
+    // 整句给更宽的长度上限，否则一句十几个字的译文会被词条的 32 字闸门挡在门外；
+    // 上限仍然保留，不要拿一段话把词表腌掉。
     const bool chinese_to_english = query.direction == EnglishIme::TranslationDirection::ChineseToEnglish;
+    const bool sentence = chinese_to_english && IsSentenceLike(query.key);
+    if (!CloudTranslation::ShouldPersistGloss(query.key, gloss, sentence ? kMaxPersistSentenceChars
+                                                                          : kMaxPersistChars))
+        return;
+    // 和英语一样：英语落 zh_en_glosses，其余语种落 zh_glosses(chinese, lang, gloss)。
     EnglishDictionary::upsert_gloss(g_db_path, chinese_to_english, query.key, gloss,
                                     chinese_to_english ? target_language : std::string{});
 }
@@ -166,11 +212,16 @@ void ApplyTranslatedGroup(const std::vector<EnglishIme::TranslationQuery> &group
     for (size_t i = 0; i < group.size(); ++i)
     {
         const std::string identity = Identity(group[i], target_language, provider_scope);
-        const std::string raw = i < translated.size() ? translated[i] : std::string{};
+        // translated 比 group 短，是批次预算到点了：后面的条目根本没发出去。
+        // 把「没发」当成「失败」记进负缓存，它们会在 8 分钟内不再重试，用户看到的就是
+        // 「怎么又没翻译」——这正是之前整句看起来彻底死掉的一半原因。
+        const bool attempted = i < translated.size();
+        const std::string raw = attempted ? translated[i] : std::string{};
         const std::string gloss = CloudTranslation::FormatGloss(raw);
         if (gloss.empty())
         {
-            RememberNegative(identity);
+            if (attempted)
+                RememberNegative(identity);
             continue;
         }
         RememberPositive(identity, gloss);
@@ -201,13 +252,15 @@ void TranslateGroup(Provider provider, const TencentTmt::Credentials &credential
                     const CustomTranslation::Config &custom, const NiuTransTranslation::Config &niutrans,
                     const std::vector<EnglishIme::TranslationQuery> &group, const std::string &source,
                     const std::string &target, const std::string &target_language, const std::string &provider_scope,
-                    std::vector<EnglishIme::TranslationResult> &out)
+                    std::vector<EnglishIme::TranslationResult> &out, bool sentence = false)
 {
     std::vector<std::string> texts;
     texts.reserve(group.size());
     for (const auto &query : group)
         texts.push_back(query.key);
-    const auto translated = TranslateWithProvider(provider, credentials, custom, niutrans, texts, source, target);
+    CustomTranslation::Config custom_config = custom;
+    custom_config.sentence = sentence;
+    const auto translated = TranslateWithProvider(provider, credentials, custom_config, niutrans, texts, source, target);
     ApplyTranslatedGroup(group, translated, target_language, provider_scope, out);
 }
 
@@ -255,6 +308,7 @@ void WorkerLoop()
         const std::string provider_scope = ProviderScope();
         std::vector<EnglishIme::TranslationQuery> en_zh;
         std::vector<EnglishIme::TranslationQuery> zh_target;
+        std::vector<EnglishIme::TranslationQuery> zh_sentence;
         std::vector<EnglishIme::TranslationResult> results;
         {
             std::lock_guard cache_lock(g_mutex);
@@ -280,20 +334,43 @@ void WorkerLoop()
                     en_zh.push_back(query);
                 else if (query.direction == EnglishIme::TranslationDirection::ChineseToEnglish &&
                          CloudTranslation::IsCloudTranslatableChinese(query.key))
-                    zh_target.push_back(query);
+                    (IsSentenceLike(query.key) ? zh_sentence : zh_target).push_back(query);
             }
         }
 
+        // 每批译完就立即上屏一次：词条不该等整句（句子一路要几秒）才一起显出来。
+        const auto publish = [&]() -> bool {
+            if (results.empty())
+                return true;
+            if (!g_running || g_job.load() != observed_job || !EnglishIme::IsTranslationCurrent(generation) ||
+                !g_callback)
+                return false;
+            g_callback(std::move(results), generation);
+            results.clear();
+            return true;
+        };
+        bool alive = true;
         if (!en_zh.empty())
-            TranslateGroup(provider, credentials, custom, niutrans, en_zh, "en", "zh", target_language, provider_scope,
-                           results);
-        if (!zh_target.empty())
-            TranslateGroup(provider, credentials, custom, niutrans, zh_target, "zh", target_language, target_language,
+        {
+            TranslateGroup(provider, credentials, custom, niutrans, en_zh, "en", "zh", target_language,
                            provider_scope, results);
-        if (results.empty() || !g_running || g_job.load() != observed_job ||
-            !EnglishIme::IsTranslationCurrent(generation) || !g_callback)
+            alive = publish();
+        }
+        if (alive && !zh_target.empty())
+        {
+            TranslateGroup(provider, credentials, custom, niutrans, zh_target, "zh", target_language,
+                           target_language, provider_scope, results);
+            alive = publish();
+        }
+        // 整句单独一批：超时和输出上限都跟词条不一样，混在一个批次里会互相拖。
+        if (alive && !zh_sentence.empty())
+        {
+            TranslateGroup(provider, credentials, custom, niutrans, zh_sentence, "zh", target_language,
+                           target_language, provider_scope, results, /*sentence=*/true);
+            alive = publish();
+        }
+        if (!alive)
             continue;
-        g_callback(std::move(results), generation);
     }
 }
 } // namespace

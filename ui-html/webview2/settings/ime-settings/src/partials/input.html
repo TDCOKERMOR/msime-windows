@@ -284,16 +284,17 @@
       <div class="section-header translation-language-row">
         <div>
           <div class="section-title">在线翻译服务</div>
-          <div class="input-setting-description">可使用腾讯云、小牛翻译，或填写自己部署的 DeepLX 兼容接口</div>
+          <div class="input-setting-description">本地词库未命中时用它补全；选协议格式后填对应的接口地址、密钥与模型</div>
         </div>
         <div class="dropdown">
           <button class="dropdown-toggle translation-language-toggle" id="translationProviderBtn">
-            <span>腾讯云</span><img src="./assets/arrow.svg" alt="▼">
+            <span>Chat Completions</span><img src="./assets/arrow.svg" alt="▼">
           </button>
           <div class="dropdown-menu translation-language-menu" id="translationProviderMenu">
-            <div class="dropdown-item" data-value="tencent">腾讯云</div>
-            <div class="dropdown-item" data-value="niutrans">小牛翻译</div>
-            <div class="dropdown-item" data-value="custom">自定义 DeepLX</div>
+            <div class="dropdown-item" data-value="openai">Chat Completions</div>
+            <div class="dropdown-item" data-value="responses">OpenAI Responses</div>
+            <div class="dropdown-item" data-value="anthropic">Anthropic Messages</div>
+            <div class="dropdown-item" data-value="gemini">Google Gemini</div>
           </div>
         </div>
       </div>
@@ -301,7 +302,7 @@
       <div class="section-header translation-language-row">
         <div>
           <div class="section-title">目标语种</div>
-          <div class="input-setting-description">英语优先使用本地词库；本地未命中时使用所选在线服务</div>
+          <div class="input-setting-description">各语种都优先查本地词库；本地没有时再用所选在线服务</div>
         </div>
         <div class="dropdown">
           <button class="dropdown-toggle translation-language-toggle" id="translationTargetLanguageBtn">
@@ -322,82 +323,22 @@
         </div>
       </div>
       <div class="input-option-divider"></div>
-      <div id="tencentTranslationFields">
+      <div id="openaiTranslationFields">
         <div class="translation-api-heading">
-          <div class="section-title">腾讯云 API 凭据</div>
-          <div class="input-setting-description">用于在线机器翻译，凭据仅保存在本机配置文件中</div>
-        </div>
-        <div class="translation-api-grid">
-          <label class="translation-api-field">
-            <span>SecretId</span>
-            <input id="tencentTmtSecretId" type="text" autocomplete="off" spellcheck="false" placeholder="AKID...">
-          </label>
-          <label class="translation-api-field">
-            <span>SecretKey</span>
-            <span class="translation-secret-input">
-              <input id="tencentTmtSecretKey" type="password" autocomplete="new-password" spellcheck="false" placeholder="SecretKey">
-              <button id="tencentTmtSecretKeyVisibility" class="translation-secret-toggle" type="button"
-                aria-label="显示 SecretKey" aria-pressed="false" title="显示 SecretKey">
-                <svg class="translation-secret-icon translation-secret-icon-show" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path>
-                  <circle cx="12" cy="12" r="2.6"></circle>
-                </svg>
-                <svg class="translation-secret-icon translation-secret-icon-hide" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="m3 3 18 18"></path>
-                  <path d="M10.6 6.1A9.6 9.6 0 0 1 12 6c6 0 9.5 6 9.5 6a16 16 0 0 1-2.2 3"></path>
-                  <path d="M6.2 6.3C3.8 8.1 2.5 12 2.5 12s3.5 6 9.5 6a9 9 0 0 0 3-.5"></path>
-                </svg>
-              </button>
-            </span>
-          </label>
-        </div>
-      </div>
-      <div id="niutransTranslationFields" hidden>
-        <div class="translation-api-heading">
-          <div class="section-title">小牛翻译 API 凭据</div>
-          <div class="input-setting-description">在“控制台—>API应用”中查看，凭据仅保存在本机配置文件中</div>
-        </div>
-        <div class="translation-api-grid">
-          <label class="translation-api-field">
-            <span>APP ID</span>
-            <input id="niutransAppId" type="text" autocomplete="off" spellcheck="false" placeholder="应用唯一标识">
-          </label>
-          <label class="translation-api-field">
-            <span>API Key</span>
-            <span class="translation-secret-input">
-              <input id="niutransApiKey" type="password" autocomplete="new-password" spellcheck="false" placeholder="apikey">
-              <button id="niutransApiKeyVisibility" class="translation-secret-toggle" type="button"
-                aria-label="显示 API Key" aria-pressed="false" title="显示 API Key">
-                <svg class="translation-secret-icon translation-secret-icon-show" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path>
-                  <circle cx="12" cy="12" r="2.6"></circle>
-                </svg>
-                <svg class="translation-secret-icon translation-secret-icon-hide" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="m3 3 18 18"></path>
-                  <path d="M10.6 6.1A9.6 9.6 0 0 1 12 6c6 0 9.5 6 9.5 6a16 16 0 0 1-2.2 3"></path>
-                  <path d="M6.2 6.3C3.8 8.1 2.5 12 2.5 12s3.5 6 9.5 6a9 9 0 0 0 3-.5"></path>
-                </svg>
-              </button>
-            </span>
-          </label>
-        </div>
-      </div>
-      <div id="customTranslationFields" hidden>
-        <div class="translation-api-heading">
-          <div class="section-title">自定义 DeepLX 服务</div>
-          <div class="input-setting-description">填写完整的 POST 接口地址；API Key 可留空</div>
+          <div class="section-title">接口与凭据</div>
+          <div class="input-setting-description">按上面选的协议填地址、密钥和模型；只填主机名会自动补全路径</div>
         </div>
         <div class="translation-api-grid">
           <label class="translation-api-field translation-api-field-wide">
             <span>接口地址</span>
-            <input id="customTranslationEndpoint" type="url" autocomplete="off" spellcheck="false"
-              placeholder="https://example.com/translate">
+            <input id="openaiTranslationEndpoint" type="url" autocomplete="off" spellcheck="false"
+              placeholder="https://api.openai.com/v1/chat/completions">
           </label>
           <label class="translation-api-field translation-api-field-wide">
-            <span>API Key（可选，以 Bearer Token 发送）</span>
+            <span>API Key</span>
             <span class="translation-secret-input">
-              <input id="customTranslationApiKey" type="password" autocomplete="new-password" spellcheck="false" placeholder="留空表示不鉴权">
-              <button id="customTranslationApiKeyVisibility" class="translation-secret-toggle" type="button"
+              <input id="openaiTranslationApiKey" type="password" autocomplete="new-password" spellcheck="false" placeholder="sk-...">
+              <button id="openaiTranslationApiKeyVisibility" class="translation-secret-toggle" type="button"
                 aria-label="显示 API Key" aria-pressed="false" title="显示 API Key">
                 <svg class="translation-secret-icon translation-secret-icon-show" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path>
@@ -411,9 +352,33 @@
               </button>
             </span>
           </label>
+          <label class="translation-api-field translation-api-field-wide">
+            <span>模型</span>
+            <input id="openaiTranslationModel" type="text" autocomplete="off" spellcheck="false" placeholder="gpt-4o-mini">
+          </label>
+          <div class="translation-prompt-block">
+            <label class="translation-api-field">
+              <span>提示词</span>
+              <div class="dropdown">
+                <button class="dropdown-toggle" id="translationPromptSlotBtn" type="button">
+                  <span>自定义一</span>
+                  <img src="./assets/arrow.svg" alt="">
+                </button>
+                <div class="dropdown-menu" id="translationPromptSlotMenu">
+                  <div class="dropdown-item" data-value="custom_1">自定义一</div>
+                  <div class="dropdown-item" data-value="custom_2">自定义二</div>
+                  <div class="dropdown-item" data-value="custom_3">自定义三</div>
+                </div>
+              </div>
+            </label>
+            <label class="translation-api-field translation-api-field-wide">
+              <textarea id="openaiTranslationPrompt" class="translation-prompt-input" rows="4" spellcheck="false"
+                placeholder="留空则用内置提示词。{lang} 会替换成目标语种名称。"></textarea>
+            </label>
+          </div>
         </div>
       </div>
-      <div class="translation-api-warning" id="candidateTranslationApiWarning" role="status">请填写 SecretId 和 SecretKey 后使用云端翻译</div>
+      <div class="translation-api-warning" id="candidateTranslationApiWarning" role="status">请填写接口地址与模型后使用在线翻译</div>
       <div class="credential-test-row">
         <button id="candidateTranslationTestButton" class="credential-test-button" type="button">测试配置</button>
         <span id="candidateTranslationTestStatus" class="credential-test-status" role="status" aria-live="polite"></span>

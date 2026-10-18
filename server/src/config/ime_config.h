@@ -127,10 +127,21 @@ struct TencentTmtConfig
 struct CustomTranslationConfig
 {
     bool enabled = false;
-    // Full URL of a DeepLX-compatible POST endpoint.
+    // Full URL of the POST endpoint.
     std::string endpoint;
     // Optional bearer token used by private or protected deployments.
     std::string api_key;
+    // openai（Chat Completions，默认）| deeplx（旧的 DeepLX 兼容协议）
+    std::string format = "openai";
+    // OpenAI 格式使用的模型名。
+    std::string model = "gpt-4o-mini";
+    // 自定义提示词：留空用内置的释义提示词，支持 {lang} 占位符。
+    // prompt 始终是当前选中槽的内容，由 prompt_custom_N 展开而来。
+    std::string prompt;
+    std::string prompt_id = "custom_1";
+    std::string prompt_custom_1;
+    std::string prompt_custom_2;
+    std::string prompt_custom_3;
 };
 
 struct NiuTransConfig

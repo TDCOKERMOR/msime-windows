@@ -7,12 +7,26 @@ import type { SettingsMessage } from '../../../../shared/messages';
 type DictionaryRequest = Extract<SettingsMessage, { type: 'dictionaryRequest' }>['data'];
 import { serializeHostMessage } from '../../../../shared/messages';
 type DictionaryType = 'quanpin' | 'wubi' | 'english';
+// 查询模式：三个词库任意一个，或同时查三个
+type QueryTarget = DictionaryType | 'all' | 'gloss';
 type DictionaryRow = { code?: string; word: string; weight?: number; display?: string };
 
-let dictionary: DictionaryType = 'quanpin';
+let dictionary: QueryTarget = 'quanpin';
 let editing: DictionaryRow | null = null;
 let requestCounter = 0;
 let lastQuery = '';
+// 联合查询：一组三个请求，全部回来后合并渲染
+let allGroup = '';
+const allBuckets = new Map<string, DictionaryRow[]>();
+// 联合查询的四个来源：三个词库 + 一份多语释义总表
+const ALL_SOURCES = ['quanpin', 'wubi', 'english', 'gloss'] as const;
+const SOURCE_LABEL: Record<string, string> = { quanpin: '全拼', wubi: '五笔', english: '英文', gloss: '释义' };
+// 每个语种一个独立标签页，各自查询、各自分页。
+const GLOSS_TABS: Record<string, string> = {
+  ja: '日语', fr: '法语', es: '西班牙语', ru: '俄语', ko: '韩语',
+  de: '德语', th: '泰语', vi: '越南语', it: '意大利语'
+};
+const glossTabLanguage = (): string | null => GLOSS_TABS[dictionary] ? dictionary : null;
 const pendingRequests = new Map<string, { action: DictionaryRequest['action']; dictionary: string }>();
 let latestQueryId = '';
 let pager: ReturnType<typeof createDictionaryPager> | undefined;
@@ -20,12 +34,12 @@ let toastTimer: number | null = null;
 
 function post(action: DictionaryRequest['action'], data: Partial<Omit<DictionaryRequest, 'action' | 'requestId'>> = {}): void {
   const requestId = `dict-${++requestCounter}`;
-  const targetDictionary = dictionary;
+  const targetDictionary = (glossTabLanguage() ? 'english' : dictionary) as QueryTarget;
   pendingRequests.set(requestId, { action, dictionary: targetDictionary });
   if (action === 'query') { latestQueryId = requestId; pager?.loading(); }
   window.chrome?.webview?.postMessage(serializeHostMessage({
     type: 'dictionaryRequest',
-    data: { requestId, dictionary, action, ...data }
+    data: { requestId, dictionary: targetDictionary, action, ...data }
   }));
 }
 
@@ -58,7 +72,9 @@ function renderRows(rows: DictionaryRow[]): void {
     indexCell.className = 'dict-index-column';
     indexCell.textContent = String((pager?.offset ?? 0) + index + 1);
     tr.appendChild(indexCell);
-    const values = dictionary === 'english'
+    const values = glossTabLanguage()
+      ? [row.word, row.display ?? '']
+      : dictionary === 'english'
       ? [row.word, row.display ?? row.word, String(row.weight ?? 0)]
       : [row.code ?? '', row.word, String(row.weight ?? 0)];
     values.forEach((value) => {
@@ -70,6 +86,7 @@ function renderRows(rows: DictionaryRow[]): void {
       });
       tr.appendChild(td);
     });
+    if (glossTabLanguage()) return tr;
     const actions = document.createElement('td');
     const edit = document.createElement('button'); edit.className = 'dict-row-action'; edit.textContent = '编辑';
     edit.addEventListener('click', () => openDialog(row));
@@ -98,30 +115,51 @@ function updateMode(): void {
   pager?.reset();
   const english = dictionary === 'english';
   const quanpin = dictionary === 'quanpin';
+  const all = dictionary === 'all';
+  const gloss = glossTabLanguage() !== null;
   const search = document.getElementById('dictSearch') as HTMLInputElement;
   search.value = '';
-  search.placeholder = english ? '输入英文前缀，例如 meta' : quanpin
-    ? '输入完整全拼，例如 nihao' : '输入五笔编码前缀';
-  document.getElementById('dictHint')!.textContent = english
-    ? '按英文前缀查询；批量导入格式为：单词<Tab>显示内容<Tab>权重（兼容无权重的两列文件）'
-    : quanpin
-      ? '全拼新增会校验拼音合法性、汉字数量和重复词条；批量导入格式为：词语<Tab>全拼[<Tab>权重]（兼容 Rime userdb.txt / dict.yaml，全拼可用空格或 \' 分音节）'
-      : '管理 86 五笔编码、词条及权重；批量导入格式为：词语<Tab>五笔编码[<Tab>权重]（兼容 Rime dict.yaml）';
+  search.placeholder = gloss
+    ? `输入中文词头，查${GLOSS_TABS[dictionary] ?? ''}释义，例如 一定`
+    : all
+    ? '输入关键词，同时查全拼 / 五笔 / 英文，并列出全部语种释义'
+    : english ? '输入英文前缀，例如 meta' : quanpin
+      ? '输入完整全拼，例如 nihao' : '输入五笔编码前缀';
+  document.getElementById('dictHint')!.textContent = gloss
+    ? '按中文词头前缀查询该语种释义；每页 100 条，本地没有的词会由在线翻译补全并写回'
+    : all
+    ? '同一个关键词分别查全拼 / 五笔 / 英文，并附上该词头的全部语种释义，合并后按权重排序；联合结果只读'
+    : english
+      ? '按英文前缀查询；批量导入格式为：单词<Tab>显示内容<Tab>权重（兼容无权重的两列文件）'
+      : quanpin
+        ? '全拼新增会校验拼音合法性、汉字数量和重复词条；批量导入格式为：词语<Tab>全拼[<Tab>权重]（兼容 Rime userdb.txt / dict.yaml，全拼可用空格或 \' 分音节）'
+        : '管理 86 五笔编码、词条及权重；批量导入格式为：词语<Tab>五笔编码[<Tab>权重]（兼容 Rime dict.yaml）';
+  const glossExport = document.getElementById('dictGlossExportCurrent') as HTMLButtonElement | null;
+  if (glossExport) glossExport.hidden = !gloss;
   const importButton = document.getElementById('dictImportButton') as HTMLButtonElement | null;
-  if (importButton) importButton.style.display = '';
+  if (importButton) importButton.style.display = all || gloss ? 'none' : '';
+
   // 纯汉字导入按当前标签页出码：拼音走注音，五笔走 wubi86 单字码组合。
   // 英文词库收不了纯汉字，隐藏以免用户点出必然失败的请求。
   const hansSection = document.querySelector<HTMLElement>('.dict-hans-import-section');
-  if (hansSection) hansSection.style.display = english ? 'none' : '';
+  if (hansSection) hansSection.style.display = english || all || gloss ? 'none' : '';
   const hansTitle = document.getElementById('dictHansImportTitle');
   if (hansTitle) {
     hansTitle.textContent = quanpin
       ? '批量导入纯汉字词组(e.g.人名)到拼音词库'
       : '批量导入纯汉字词组(e.g.人名)到五笔词库';
   }
-  document.getElementById('dictTableHeader')!.innerHTML = english
-    ? '<th class="dict-index-column">No.</th><th>单词</th><th>显示内容</th><th>权重</th><th>操作</th>'
-    : '<th class="dict-index-column">No.</th><th>编码</th><th>词条</th><th>权重</th><th>操作</th>';
+  const addButton = document.getElementById('dictAddButton') as HTMLButtonElement | null;
+  if (addButton) addButton.style.display = all || gloss ? 'none' : '';
+  const pagination = document.querySelector<HTMLElement>('.dict-pagination');
+  if (pagination) pagination.style.display = all ? 'none' : '';
+  document.getElementById('dictTableHeader')!.innerHTML = gloss
+    ? '<th class="dict-index-column">No.</th><th>词头</th><th>释义</th>'
+    : all
+    ? '<th class="dict-index-column">No.</th><th>来源</th><th>编码/单词</th><th>词条</th><th>权重</th>'
+    : english
+      ? '<th class="dict-index-column">No.</th><th>单词</th><th>显示内容</th><th>权重</th><th>操作</th>'
+      : '<th class="dict-index-column">No.</th><th>编码</th><th>词条</th><th>权重</th><th>操作</th>';
   document.getElementById('dictRows')!.innerHTML = '<tr><td colspan="5" class="dict-empty">输入查询条件后查看词条</td></tr>';
   syncTableHeaderWidth();
 }
@@ -148,7 +186,80 @@ function closeDialog(): void {
 function query(offset = 0): void {
   if (offset === 0) lastQuery = (document.getElementById('dictSearch') as HTMLInputElement).value.trim();
   if (!lastQuery) { showToast('请输入查询内容', false); return; }
-  post('query', { ...(dictionary === 'english' ? { word: lastQuery } : { code: lastQuery }), offset, limit: DICTIONARY_PAGE_SIZE });
+  if (dictionary === 'all') { queryAll(); return; }
+  const language = glossTabLanguage();
+  if (language) {
+    post('query', { word: lastQuery, code: language, offset, limit: DICTIONARY_PAGE_SIZE });
+    return;
+  }
+  post('query', {
+    ...(dictionary === 'english' ? { word: lastQuery } : { code: lastQuery }),
+    offset,
+    limit: DICTIONARY_PAGE_SIZE
+  });
+}
+
+// 联合查询：同一个关键词分别打给三个词库，全部返回后合并成一张表。
+function queryAll(): void {
+  allGroup = `dict-all-${++requestCounter}`;
+  allBuckets.clear();
+  ALL_SOURCES.forEach((source) => {
+    const requestId = `${allGroup}-${source}`;
+    pendingRequests.set(requestId, { action: 'query', dictionary: 'all' });
+    // 释义总表复用英文通道：code=all 时按词头聚合全部语种。
+    const channel: DictionaryType = source === 'gloss' ? 'english' : source;
+    window.chrome?.webview?.postMessage(serializeHostMessage({
+      type: 'dictionaryRequest',
+      data: {
+        requestId,
+        dictionary: channel,
+        action: 'query',
+        ...(source === 'gloss'
+          ? { word: lastQuery, code: 'all' }
+          : source === 'english' ? { word: lastQuery } : { code: lastQuery }),
+        offset: 0,
+        limit: 20
+      }
+    }));
+  });
+}
+
+function renderMergedRows(): void {
+  const body = document.getElementById('dictRows');
+  if (!body) return;
+  const merged: { source: string; code: string; word: string; weight: number }[] = [];
+  allBuckets.forEach((rows, source) => {
+    rows.forEach((row) => merged.push({
+      source,
+      code: source === 'english' || source === 'gloss' ? row.word : (row.code ?? ''),
+      word: source === 'english' || source === 'gloss' ? (row.display ?? row.word) : row.word,
+      weight: row.weight ?? 0
+    }));
+  });
+  merged.sort((a, b) => b.weight - a.weight);
+  if (!merged.length) {
+    body.innerHTML = '<tr><td colspan="5" class="dict-empty">三个词库都没有找到词条</td></tr>';
+    syncTableHeaderWidth();
+    return;
+  }
+  body.replaceChildren(...merged.map((row, index) => {
+    const tr = document.createElement('tr');
+    const indexCell = document.createElement('td');
+    indexCell.className = 'dict-index-column';
+    indexCell.textContent = String(index + 1);
+    tr.appendChild(indexCell);
+    [SOURCE_LABEL[row.source], row.code, row.word, String(row.weight)].forEach((value) => {
+      const td = document.createElement('td');
+      td.textContent = value;
+      td.addEventListener('mouseenter', () => {
+        if (td.scrollWidth > td.clientWidth) td.title = value;
+        else td.removeAttribute('title');
+      });
+      tr.appendChild(td);
+    });
+    return tr;
+  }));
+  syncTableHeaderWidth();
 }
 
 function downloadExport(content: string, filename: string): void {
@@ -173,7 +284,7 @@ export function setupDictionary(): void {
   if (table) pager = createDictionaryPager(table, offset => query(offset));
   document.querySelectorAll<HTMLButtonElement>('.dict-tab').forEach((tab) => tab.addEventListener('click', () => {
     document.querySelector('.dict-tab.active')?.classList.remove('active'); tab.classList.add('active');
-    dictionary = tab.dataset.dictionary as DictionaryType; updateMode();
+    dictionary = tab.dataset.dictionary as QueryTarget; updateMode();
   }));
   document.getElementById('dictSearchButton')?.addEventListener('click', () => query());
   document.getElementById('dictSearch')?.addEventListener('keydown', (event) => { if ((event as KeyboardEvent).key === 'Enter') query(); });
@@ -209,6 +320,16 @@ export function setupDictionary(): void {
     } catch {
       showToast('读取文件失败', false);
     }
+  });
+  document.getElementById('dictGlossExportCurrent')?.addEventListener('click', () => {
+    const language = glossTabLanguage();
+    if (language) post('export', { dictionary: 'gloss', code: language });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-export-gloss]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const language = button.dataset.exportGloss;
+      if (language) post('export', { dictionary: 'gloss', code: language });
+    });
   });
   document.querySelectorAll<HTMLButtonElement>('[data-export-dictionary]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -247,6 +368,14 @@ export function setupDictionary(): void {
     const context = pendingRequests.get(payload.requestId);
     if (!context) return;
     pendingRequests.delete(payload.requestId);
+    // 联合查询：三个来源分别回来，全部到齐再合并成一张表。
+    if (context.dictionary === 'all') {
+      if (!allGroup || !payload.requestId.startsWith(allGroup)) return;
+      const source = payload.requestId.slice(allGroup.length + 1) as DictionaryType;
+      allBuckets.set(source, payload.ok ? (payload.rows as DictionaryRow[]) : []);
+      if (allBuckets.size >= ALL_SOURCES.length) renderMergedRows();
+      return;
+    }
     if (context.action === 'query' && payload.requestId !== latestQueryId) return;
     if (context.action === 'query' && context.dictionary !== dictionary) return;
     const lastAction = context.action;

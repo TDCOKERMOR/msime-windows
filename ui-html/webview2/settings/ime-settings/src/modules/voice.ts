@@ -112,7 +112,7 @@ const FALLBACK_PRESETS: PolishPreset[] = [
 ];
 
 const ASR_PROVIDERS = ['doubao', 'openai', 'siliconflow', 'groq'] as const;
-const POLISH_PROVIDERS = ['siliconflow', 'openai', 'deepseek', 'groq'] as const;
+const POLISH_PROVIDERS = ['openai', 'responses', 'anthropic', 'gemini'] as const;
 
 let asrTokens: Record<string, string> = {};
 let polishTokens: Record<string, string> = {};
@@ -529,7 +529,11 @@ export function applyVoiceConfig(config: Record<string, unknown>): void {
     'voicePolishProviderMenu',
     typeof config.polish_provider === 'string' ? config.polish_provider : undefined
   );
-  const polishProvider = typeof config.polish_provider === 'string' ? config.polish_provider : 'siliconflow';
+  const polishProvider = (() => {
+    const raw = typeof config.polish_provider === 'string' ? config.polish_provider : 'openai';
+    // 旧配置里的厂商标名折回 Chat Completions。
+    return (['openai', 'responses', 'anthropic', 'gemini'] as string[]).includes(raw) ? raw : 'openai';
+  })();
   currentPolishProvider = polishProvider;
   polishTokens = readTokenMap(
     config.polish_tokens,

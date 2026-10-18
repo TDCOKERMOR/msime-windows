@@ -10,33 +10,29 @@ const fields: Record<string, string> = {
 };
 
 const PROVIDER_DEFAULTS: Record<string, ProviderDefaults> = {
-  deepseek: {
-    endpoint: 'https://api.deepseek.com/chat/completions',
-    model: 'deepseek-v4-flash'
-  },
   openai: {
     endpoint: 'https://api.openai.com/v1/chat/completions',
     model: 'gpt-4o-mini'
   },
-  siliconflow: {
-    endpoint: 'https://api.siliconflow.cn/v1/chat/completions',
-    model: 'Qwen/Qwen3-8B'
+  responses: {
+    endpoint: 'https://api.openai.com/v1/responses',
+    model: 'gpt-4.1-mini'
   },
-  groq: {
-    endpoint: 'https://api.groq.com/openai/v1/chat/completions',
-    model: 'qwen/qwen3.8-27b'
+  anthropic: {
+    endpoint: 'https://api.anthropic.com/v1/messages',
+    model: 'claude-sonnet-4-5'
   },
-  custom: {
-    endpoint: '',
-    model: ''
+  gemini: {
+    endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
+    model: 'gemini-2.5-flash'
   }
 };
 
-const PROVIDERS = ['deepseek', 'openai', 'siliconflow', 'groq', 'custom'] as const;
+const PROVIDERS = ['openai', 'responses', 'anthropic', 'gemini'] as const;
 let tokens: Record<string, string> = {};
 let endpoints: Record<string, string> = {};
 let models: Record<string, string> = {};
-let currentProvider = 'deepseek';
+let currentProvider = 'openai';
 let currentPromptId = 'custom_1';
 let customPrompts: Record<string, string> = { custom_1: '', custom_2: '', custom_3: '' };
 
@@ -53,10 +49,10 @@ function applyProviderFields(provider: string): void {
   }
 }
 
-// 思考强度只有 DeepSeek 会发给服务商，其他服务商下隐藏，已保存的档位保留不动。
+// 思考强度只对 Chat Completions 下的 DeepSeek 模型有意义，其他协议下隐藏。
 function applyThinkingVisibility(provider: string): void {
   const field = document.getElementById('aiThinkingField');
-  if (field) field.hidden = provider !== 'deepseek';
+  if (field) field.hidden = provider !== 'openai';
 }
 
 function readProviderMap(raw: unknown, provider: string, legacyValue: string): Record<string, string> {
@@ -213,7 +209,10 @@ export function applyAiConfig(config: Record<string, unknown>): void {
   if (typeof config.enabled === 'boolean') applyToggleState('aiEnabled', config.enabled);
   applyDropdownValue('aiThinkingBtn', 'aiThinkingMenu',
     typeof config.thinking === 'string' ? config.thinking : 'disabled');
-  currentProvider = typeof config.provider === 'string' ? config.provider : 'deepseek';
+  // 旧配置里存的是厂商标名，统一折回 Chat Completions 协议。
+  const known = ['openai', 'responses', 'anthropic', 'gemini'];
+  const rawProvider = typeof config.provider === 'string' ? config.provider : 'openai';
+  currentProvider = known.includes(rawProvider) ? rawProvider : 'openai';
   tokens = readProviderMap(config.tokens, currentProvider, typeof config.token === 'string' ? config.token : '');
   endpoints = readProviderMap(config.endpoints, currentProvider, typeof config.endpoint === 'string' ? config.endpoint : '');
   models = readProviderMap(config.models, currentProvider, typeof config.model === 'string' ? config.model : '');

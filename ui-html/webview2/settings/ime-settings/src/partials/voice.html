@@ -42,7 +42,7 @@
     <div class="voice-description">豆包为流式识别；OpenAI、SiliconFlow、Groq 走 OpenAI 兼容的语音转写接口。每个提供商的 Token 分开保存，切换时只换当前使用的那一份。</div>
     <div class="voice-grid">
       <div class="voice-field">
-        <span>服务提供商</span>
+        <span>协议格式</span>
         <div class="dropdown">
           <button class="dropdown-toggle" id="voiceAsrProviderBtn" type="button">
             <span>豆包</span>
@@ -125,20 +125,20 @@
 
   <div class="section voice-section">
     <div class="section-header voice-heading"><div class="section-title">文本润色 API</div><div class="ftb-toggle-btn" id="voicePolishText" role="switch" aria-checked="false" tabindex="0"><div class="ftb-toggle-knob"></div></div></div>
-    <div class="voice-description">SiliconFlow、OpenAI、DeepSeek、Groq 均走 OpenAI 兼容的 Chat Completions 接口。</div>
+    <div class="voice-description">润色支持四种协议：Chat Completions / OpenAI Responses / Anthropic Messages / Google Gemini。每种协议的 Token 分开保存。</div>
     <div class="voice-grid">
       <div class="voice-field">
-        <span>服务提供商</span>
+        <span>协议格式</span>
         <div class="dropdown">
           <button class="dropdown-toggle" id="voicePolishProviderBtn" type="button">
-            <span>SiliconFlow</span>
+            <span>Chat Completions</span>
             <img src="./assets/arrow.svg" alt="">
           </button>
           <div class="dropdown-menu" id="voicePolishProviderMenu">
-            <div class="dropdown-item" data-value="siliconflow">SiliconFlow</div>
-            <div class="dropdown-item" data-value="openai">OpenAI</div>
-            <div class="dropdown-item" data-value="deepseek">DeepSeek</div>
-            <div class="dropdown-item" data-value="groq">Groq</div>
+            <div class="dropdown-item" data-value="openai">Chat Completions</div>
+            <div class="dropdown-item" data-value="responses">OpenAI Responses</div>
+            <div class="dropdown-item" data-value="anthropic">Anthropic Messages</div>
+            <div class="dropdown-item" data-value="gemini">Google Gemini</div>
           </div>
         </div>
       </div>
@@ -157,7 +157,7 @@
             <div class="dropdown-item" data-value="max">最高</div>
           </div>
         </div>
-        <span class="voice-description">仅 DeepSeek 生效。开启后润色更细致，但上屏前要多等几秒到几十秒，超过 30 秒直接上屏原文。</span>
+        <span class="voice-description">仅 Chat Completions 下的 DeepSeek 模型生效。开启后润色更细致，但上屏前要多等几秒到几十秒，超过 30 秒直接上屏原文。</span>
       </div>
       <div class="voice-field voice-wide">
         <label for="voicePolishToken">API Token</label>

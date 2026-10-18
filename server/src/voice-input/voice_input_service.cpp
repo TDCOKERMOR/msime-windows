@@ -4,6 +4,7 @@
 #include <limits>
 
 #include "voice_input_service.h"
+#include "cloud/ai_wire.h"
 #include "config/ime_config.h"
 #include "doubao_asr_client.h"
 #include "voice_providers.h"
@@ -619,10 +620,17 @@ std::string Polish(const std::string &text, const VoiceInputConfig &config)
     if (!curl)
         return text;
     std::string response;
+    const auto wire = AiWire::FromId(config.polish_provider);
+    const std::string polish_url =
+        AiWire::NormalizeEndpoint(config.polish_endpoint, wire, VoiceInput::ResolvePolishModel(config));
     curl_slist *headers = nullptr;
     headers = curl_slist_append(headers, "Content-Type: application/json");
-    headers = curl_slist_append(headers, ("Authorization: Bearer " + polish_token).c_str());
-    curl_easy_setopt(curl, CURLOPT_URL, config.polish_endpoint.c_str());
+    std::vector<std::string> auth_lines;
+    for (const auto &header : AiWire::AuthHeaders(wire, polish_token))
+        auth_lines.push_back(header.name + ": " + header.value);
+    for (const auto &line : auth_lines)
+        headers = curl_slist_append(headers, line.c_str());
+    curl_easy_setopt(curl, CURLOPT_URL, polish_url.c_str());
     NetworkProxy::ApplyToCurl(curl);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.data());
@@ -642,14 +650,8 @@ std::string Polish(const std::string &text, const VoiceInputConfig &config)
     curl_easy_cleanup(curl);
     if (result != CURLE_OK || http_status < 200 || http_status >= 300)
         return text;
-    try
-    {
-        return metasequoia::voice::parse_polished_text(response);
-    }
-    catch (...)
-    {
-        return text;
-    }
+    const std::string polished = AiWire::ExtractText(wire, response);
+    return polished.empty() ? text : polished;
 }
 
 void SendTextViaSendInput(const std::wstring &text)

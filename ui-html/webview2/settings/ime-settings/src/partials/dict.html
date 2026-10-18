@@ -5,10 +5,21 @@
       <button class="dict-tab active" data-dictionary="quanpin">全拼词库</button>
       <button class="dict-tab" data-dictionary="wubi">五笔词库</button>
       <button class="dict-tab" data-dictionary="english">英文词库</button>
+      <button class="dict-tab" data-dictionary="ja">日语词库</button>
+      <button class="dict-tab" data-dictionary="fr">法语词库</button>
+      <button class="dict-tab" data-dictionary="es">西班牙语词库</button>
+      <button class="dict-tab" data-dictionary="ru">俄语词库</button>
+      <button class="dict-tab" data-dictionary="ko">韩语词库</button>
+      <button class="dict-tab" data-dictionary="de">德语词库</button>
+      <button class="dict-tab" data-dictionary="th">泰语词库</button>
+      <button class="dict-tab" data-dictionary="vi">越南语词库</button>
+      <button class="dict-tab" data-dictionary="it">意大利语词库</button>
+      <button class="dict-tab" data-dictionary="all">全部词库</button>
     </div>
     <div class="dict-toolbar">
       <input id="dictSearch" class="dict-input" placeholder="输入全拼后查询，例如 nihao" spellcheck="false">
       <button id="dictSearchButton" class="dict-button secondary">查询</button>
+      <button id="dictGlossExportCurrent" class="dict-button secondary" type="button" hidden>导出本语种</button>
       <button id="dictImportButton" class="dict-button secondary">批量导入</button>
       <button id="dictAddButton" class="dict-button primary">新增词条</button>
       <input id="dictImportFile" type="file" accept=".txt,.yaml,.yml,text/plain" hidden>
@@ -45,6 +56,50 @@
     <div class="dict-export-row">
       <span>导出英文用户词库</span>
       <button class="dict-button primary" type="button" data-export-dictionary="english">导出</button>
+    </div>
+    <div class="dict-export-row">
+      <span>导出英语释义</span>
+      <button class="dict-button primary" type="button" data-export-gloss="en">导出</button>
+    </div>
+    <div class="dict-export-row">
+      <span>导出日语释义</span>
+      <button class="dict-button primary" type="button" data-export-gloss="ja">导出</button>
+    </div>
+    <div class="dict-export-row">
+      <span>导出法语释义</span>
+      <button class="dict-button primary" type="button" data-export-gloss="fr">导出</button>
+    </div>
+    <div class="dict-export-row">
+      <span>导出西班牙语释义</span>
+      <button class="dict-button primary" type="button" data-export-gloss="es">导出</button>
+    </div>
+    <div class="dict-export-row">
+      <span>导出俄语释义</span>
+      <button class="dict-button primary" type="button" data-export-gloss="ru">导出</button>
+    </div>
+    <div class="dict-export-row">
+      <span>导出韩语释义</span>
+      <button class="dict-button primary" type="button" data-export-gloss="ko">导出</button>
+    </div>
+    <div class="dict-export-row">
+      <span>导出德语释义</span>
+      <button class="dict-button primary" type="button" data-export-gloss="de">导出</button>
+    </div>
+    <div class="dict-export-row">
+      <span>导出泰语释义</span>
+      <button class="dict-button primary" type="button" data-export-gloss="th">导出</button>
+    </div>
+    <div class="dict-export-row">
+      <span>导出越南语释义</span>
+      <button class="dict-button primary" type="button" data-export-gloss="vi">导出</button>
+    </div>
+    <div class="dict-export-row">
+      <span>导出意大利语释义</span>
+      <button class="dict-button primary" type="button" data-export-gloss="it">导出</button>
+    </div>
+    <div class="dict-export-row">
+      <span>导出全部用户词库（拼音 + 五笔 + 英文，带来源列）</span>
+      <button class="dict-button primary" type="button" data-export-dictionary="all">导出</button>
     </div>
   </div>
 
