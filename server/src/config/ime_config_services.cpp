@@ -343,6 +343,9 @@ bool SetConfiguredCustomTranslationString(const std::string &key, const std::str
     else if (key == "format" && (value == "openai" || value == "responses" || value == "anthropic" ||
                                  value == "gemini" || value == "deeplx"))
         target = &g_custom_translation.format;
+    else if (key == "thinking" &&
+             (value.empty() || value == "disabled" || value == "low" || value == "high" || value == "max"))
+        target = &g_custom_translation.thinking;
     if (!target || !WriteConfiguredValue("custom_translation", key, EscapeTomlBasicString(value)))
         return false;
     *target = value;

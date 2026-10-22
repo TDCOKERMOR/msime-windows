@@ -19,6 +19,9 @@ struct Config
     bool sentence = false;
     // 译后校对：只对自定义服务生效，由 [custom_translation].review 控制。
     bool review = true;
+    // 思考强度：空 = 不干预，disabled = 显式关掉，low/high/max = 开启。
+    // 中转站的模型常常默认思考，思考 token 会吃满 max_tokens，正文变空。
+    std::string thinking;
 };
 
 bool IsSupportedEndpoint(const std::string &endpoint);

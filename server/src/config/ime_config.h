@@ -175,6 +175,9 @@ struct CustomTranslationConfig
     std::string format = "openai";
     // 译后校对：译完再让同一模型复核一遍，只把确实要改的条目写回词库。
     bool review = true;
+    // 翻译请求的思考强度：空 = 不干预（仅 deepseek 端点默认关），
+    // disabled = 显式关掉（中转模型默认思考时必选），low / high / max = 开启。
+    std::string thinking;
     // OpenAI 格式使用的模型名。
     std::string model = "gpt-4o-mini";
     // 自定义提示词：留空用内置的释义提示词，支持 {lang} 占位符。

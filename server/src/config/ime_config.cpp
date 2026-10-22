@@ -1074,6 +1074,11 @@ bool LoadImeConfig()
             g_custom_translation.format != "deeplx")
             g_custom_translation.format = "openai";
         g_custom_translation.review = tbl["custom_translation"]["review"].value_or(true);
+        g_custom_translation.thinking = tbl["custom_translation"]["thinking"].value_or(std::string());
+        if (!g_custom_translation.thinking.empty() && g_custom_translation.thinking != "disabled" &&
+            g_custom_translation.thinking != "low" && g_custom_translation.thinking != "high" &&
+            g_custom_translation.thinking != "max")
+            g_custom_translation.thinking.clear();
         g_custom_translation.model = tbl["custom_translation"]["model"].value_or(std::string("gpt-4o-mini"));
         const std::string legacy_translation_prompt = tbl["custom_translation"]["prompt"].value_or(std::string());
         g_custom_translation.prompt_id = tbl["custom_translation"]["prompt_id"].value_or(std::string("custom_1"));

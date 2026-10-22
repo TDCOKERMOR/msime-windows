@@ -120,10 +120,10 @@ std::string TranslationSystemPrompt(const CustomTranslation::Config &config, con
            "，只输出一个 JSON 对象，不要代码块、不要解释：\n"
            "{\"from\":\"zh\",\"to\":\"" +
            target +
-           "\",\"trans_result\":[{\"src\":\"用户给的内容\",\"dst\":\"译文\"}]}\n"
+           "\",\"termList\":[{\"src\":\"用户给的内容\",\"tgt\":\"译文\"}]}\n"
            "规则：\n"
-           "1. 词或短语：dst 最多两个义项，用「；」连接，去掉词性标注，尽量短。\n"
-           "2. 整句：dst 给完整译文，保留语气与标点，不缩写、不分条、不用分号。";
+           "1. 词或短语：tgt 最多两个义项，用「；」连接，去掉词性标注，尽量短。\n"
+           "2. 整句：tgt 给完整译文，保留语气与标点，不缩写、不分条、不用分号。";
 }
 
 // 抹平各家模型常见的输出噪声：前后引号、反引号、换行、多余空白。
@@ -149,17 +149,24 @@ std::string ExtractNiutransDst(const std::string &text)
     try
     {
         const auto root = nlohmann::json::parse(body);
-        const auto result = root.find("trans_result");
-        if (result == root.end() || !result->is_array() || result->empty())
-            return text;
-        const auto &first_item = result->front();
-        if (!first_item.is_object())
-            return text;
-        const auto dst = first_item.find("dst");
-        if (dst == first_item.end() || !dst->is_string())
-            return text;
-        const std::string value = dst->get<std::string>();
-        return value.empty() ? text : value;
+        // 两种形状都认：v2 的 termList/tgt（当前提示词）与 v1 的 trans_result/dst（旧提示词）。
+        for (const auto &shape : {std::pair<const char *, const char *>{"termList", "tgt"},
+                                  std::pair<const char *, const char *>{"trans_result", "dst"}})
+        {
+            const auto result = root.find(shape.first);
+            if (result == root.end() || !result->is_array() || result->empty())
+                continue;
+            const auto &first_item = result->front();
+            if (!first_item.is_object())
+                continue;
+            const auto value = first_item.find(shape.second);
+            if (value == first_item.end() || !value->is_string())
+                continue;
+            const std::string translated = value->get<std::string>();
+            if (!translated.empty())
+                return translated;
+        }
+        return text;
     }
     catch (...)
     {
@@ -278,11 +285,37 @@ std::string NormalizeEndpoint(std::string endpoint, Wire wire)
         }
     }
     (void)bare;
+    // 只写了端点、漏了版本前缀，例如 https://api.deepseek.com/chat/completions。
+    if (path == "/chat/completions" || path == "/responses" || path == "/messages")
+        return endpoint.substr(0, path_at) + "/v1" + path;
     return endpoint;
 }
 
+// DeepSeek 的思考 token 也算在 max_tokens 里：不显式关掉，校对这类要求短回复的请求
+// 会被思考吃满预算，返回空串（实测 completion_tokens 正好等于上限，正文为空）。
+bool IsDeepSeekEndpoint(const std::string &endpoint)
+{
+    return endpoint.find("deepseek") != std::string::npos;
+}
+
+// 思考开关：用户显式选 disabled 就关；没配置时只对 deepseek 官方端点兜底。
+// 别的服务（MiniMax 等）不认识 thinking 字段，没配置就不要塞。
+bool ShouldDisableThinking(const CustomTranslation::Config &config)
+{
+    if (config.thinking == "disabled")
+        return true;
+    return config.thinking.empty() && IsDeepSeekEndpoint(config.endpoint);
+}
+
+std::string ReasoningEffortOf(const CustomTranslation::Config &config)
+{
+    return config.thinking == "low" || config.thinking == "high" || config.thinking == "max" ? config.thinking
+                                                                                             : std::string{};
+}
+
 nlohmann::json BuildWireBody(Wire wire, const std::string &model, const std::string &system, const std::string &text,
-                             int max_tokens)
+                             int max_tokens, bool disable_thinking = false,
+                             const std::string &reasoning_effort = {})
 {
     using nlohmann::json;
     switch (wire)
@@ -302,12 +335,22 @@ nlohmann::json BuildWireBody(Wire wire, const std::string &model, const std::str
                 {"generationConfig", {{"temperature", 0}, {"maxOutputTokens", max_tokens}}}};
     case Wire::Chat:
     default:
-        return {{"model", model},
-                {"temperature", 0},
-                {"max_tokens", max_tokens},
-                {"stream", false},
-                {"messages",
-                 json::array({{{"role", "system"}, {"content", system}}, {{"role", "user"}, {"content", text}}})}};
+    {
+        json body = {{"model", model},
+                     {"temperature", 0},
+                     {"max_tokens", max_tokens},
+                     {"stream", false},
+                     {"messages", json::array({{{"role", "system"}, {"content", system}},
+                                               {{"role", "user"}, {"content", text}}})}};
+        if (disable_thinking)
+            body["thinking"] = {{"type", "disabled"}};
+        else if (!reasoning_effort.empty())
+        {
+            body["thinking"] = {{"type", "enabled"}};
+            body["reasoning_effort"] = reasoning_effort;
+        }
+        return body;
+    }
     }
 }
 
@@ -478,7 +521,10 @@ std::vector<std::string> TextTranslateBatchOpenAi(const CustomTranslation::Confi
             results.resize(i);
             break;
         }
-        const std::string payload = BuildWireBody(wire, config.model, system_prompt, texts[i], max_tokens).dump();
+        const std::string payload =
+            BuildWireBody(wire, config.model, system_prompt, texts[i], max_tokens, ShouldDisableThinking(config),
+                          ReasoningEffortOf(config))
+                .dump();
         ResponseBuffer response;
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.c_str());
         curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(payload.size()));
@@ -689,7 +735,9 @@ std::vector<std::string> ReviewTranslations(const Config &config, const std::vec
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 
-    const std::string payload = BuildWireBody(wire, config.model, system, user, 1024).dump();
+    const std::string payload =
+        BuildWireBody(wire, config.model, system, user, 1024, ShouldDisableThinking(config), ReasoningEffortOf(config))
+            .dump();
     ResponseBuffer response;
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.c_str());
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(payload.size()));

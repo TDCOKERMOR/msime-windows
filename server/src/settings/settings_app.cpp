@@ -598,6 +598,7 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
             {"api_key", custom_translation.api_key},
             {"format", custom_translation.format},
             {"review", custom_translation.review},
+            {"thinking", custom_translation.thinking},
             {"model", custom_translation.model},
             {"prompt", custom_translation.prompt},
             {"prompt_id", custom_translation.prompt_id},

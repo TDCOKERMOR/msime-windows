@@ -100,6 +100,7 @@ std::optional<RuntimeConfig> Resolve(const TranslationConfig &config)
         // CustomTranslation::Config 只带最终生效的那一份。
         resolved.custom.prompt = config.custom.prompt;
         resolved.custom.review = config.custom.review;
+        resolved.custom.thinking = config.custom.thinking;
         if (!CustomTranslation::IsSupportedEndpoint(resolved.custom.endpoint))
             return std::nullopt;
         break;
