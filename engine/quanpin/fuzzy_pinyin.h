@@ -120,8 +120,7 @@ std::vector<WordItem> merge_fuzzy_candidates(std::vector<WordItem> exact, std::v
     // 而 fuzzy 池里可能是权重几十万的词库真身。按「来源优先 + 权重」择优保留，否则被删掉的
     // 恰好是那条能参与调频的词库项（#1172：模糊音下「执行」「已经」永远调不上去）。
     const auto rank_of = [](const WordItem &item) {
-        const bool database =
-            item.source == CandidateSource::Database || item.source == CandidateSource::UserDatabase;
+        const bool database = item.source == CandidateSource::Database || item.source == CandidateSource::UserDatabase;
         return std::pair<int, std::int64_t>{database ? 1 : 0, item.weight};
     };
 

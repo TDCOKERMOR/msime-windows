@@ -35,6 +35,6 @@ std::vector<std::string> TextTranslateBatch(const Config &config, const std::vec
 // 返回与 texts 等长，空串表示这条不用改。sentence 决定超时档位；
 // deeplx 没有聊天接口，直接返回全空。
 std::vector<std::string> ReviewTranslations(const Config &config, const std::vector<std::string> &texts,
-                                           const std::vector<std::string> &translations, const std::string &source,
-                                           const std::string &target, bool sentence);
+                                            const std::vector<std::string> &translations, const std::string &source,
+                                            const std::string &target, bool sentence);
 } // namespace CustomTranslation

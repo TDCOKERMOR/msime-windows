@@ -48,8 +48,8 @@ bool TooLong(const std::string &key)
 bool ShouldPersist(const Query &query, const std::string &gloss)
 {
     const bool sentence = query.direction == Direction::ChineseToEnglish && IsSentenceLike(query.key);
-    return CloudTranslation::ShouldPersistGloss(query.key, gloss, sentence ? kMaxPersistSentenceChars
-                                                                          : kMaxPersistChars);
+    return CloudTranslation::ShouldPersistGloss(query.key, gloss,
+                                                sentence ? kMaxPersistSentenceChars : kMaxPersistChars);
 }
 
 void PersistGloss(const Query &query, const std::string &gloss, const std::string &target_language)
@@ -77,8 +77,8 @@ void PersistGlosses(const std::vector<GlossWrite> &writes, const std::string &ta
         if (!ShouldPersist(write.query, write.gloss))
             continue;
         const bool chinese_to_english = write.query.direction == Direction::ChineseToEnglish;
-        entries.push_back({chinese_to_english, write.query.key, write.gloss,
-                           chinese_to_english ? target_language : std::string{}});
+        entries.push_back(
+            {chinese_to_english, write.query.key, write.gloss, chinese_to_english ? target_language : std::string{}});
     }
     if (!entries.empty())
         EnglishDictionary::upsert_glosses(db_path, entries);

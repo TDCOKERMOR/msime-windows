@@ -22,8 +22,8 @@ std::string Id(Wire wire);
 // 只填了主机名或 /v1 的地址，按协议补齐默认路径。
 std::string NormalizeEndpoint(const std::string &endpoint, Wire wire, const std::string &model);
 
-nlohmann::json BuildBody(Wire wire, const std::string &model, const std::string &system,
-                         const std::string &user, int max_tokens, double temperature);
+nlohmann::json BuildBody(Wire wire, const std::string &model, const std::string &system, const std::string &user,
+                         int max_tokens, double temperature);
 
 // 从响应里取正文；解析失败或带 error 字段时返回空串。
 std::string ExtractText(Wire wire, const std::string &response);

@@ -1860,9 +1860,9 @@ VisualPtr BuildInputPage(PageContext &context)
              blockInput(LanguageRow(L"只显示单条释义", L"每个候选只显示第一条译文释义；Ctrl+Enter 仍可选择全部释义上屏",
                                     s->singleSenseBlock)),
              std::make_shared<Divider>(Divider::Kind::Option),
-             blockInput(LanguageRow(L"AI 校对",
-                                    L"译完后把译文交给同一模型复核，只回写确实要改的条目；只对自定义服务生效，不阻塞上屏",
-                                    review)),
+             blockInput(LanguageRow(
+                 L"AI 校对", L"译完后把译文交给同一模型复核，只回写确实要改的条目；只对自定义服务生效，不阻塞上屏",
+                 review)),
              std::make_shared<Divider>(Divider::Kind::Option),
              blockInput(LanguageRow(L"在线翻译服务",
                                     L"可使用腾讯云、阿里云、小牛翻译、自己部署的 DeepLX 兼容接口，或复用 AI 辅助的配置",

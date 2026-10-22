@@ -37,6 +37,9 @@ struct Outcome
 {
     std::vector<std::string> translations;
 
-    bool attempted(size_t index) const { return index < translations.size(); }
+    bool attempted(size_t index) const
+    {
+        return index < translations.size();
+    }
 };
 } // namespace Translate

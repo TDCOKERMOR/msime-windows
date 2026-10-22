@@ -41,3 +41,4 @@ server/build-rel/
 server/build-release/
 server/vcpkg_installed/
 
+windows/build-rel/

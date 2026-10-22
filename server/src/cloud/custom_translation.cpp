@@ -281,19 +281,15 @@ std::string NormalizeEndpoint(std::string endpoint, Wire wire)
     return endpoint;
 }
 
-nlohmann::json BuildWireBody(Wire wire, const std::string &model, const std::string &system,
-                             const std::string &text, int max_tokens)
+nlohmann::json BuildWireBody(Wire wire, const std::string &model, const std::string &system, const std::string &text,
+                             int max_tokens)
 {
     using nlohmann::json;
     switch (wire)
     {
     case Wire::Responses:
-        return {{"model", model},
-                {"instructions", system},
-                {"input", text},
-                {"temperature", 0},
-                {"max_output_tokens", max_tokens},
-                {"stream", false}};
+        return {{"model", model},   {"instructions", system},          {"input", text},
+                {"temperature", 0}, {"max_output_tokens", max_tokens}, {"stream", false}};
     case Wire::Anthropic:
         return {{"model", model},
                 {"max_tokens", max_tokens},
@@ -310,8 +306,8 @@ nlohmann::json BuildWireBody(Wire wire, const std::string &model, const std::str
                 {"temperature", 0},
                 {"max_tokens", max_tokens},
                 {"stream", false},
-                {"messages", json::array({{{"role", "system"}, {"content", system}},
-                                          {{"role", "user"}, {"content", text}}})}};
+                {"messages",
+                 json::array({{{"role", "system"}, {"content", system}}, {{"role", "user"}, {"content", text}}})}};
     }
 }
 
@@ -342,8 +338,7 @@ std::string ParseWireResponse(Wire wire, const std::string &response)
             return {};
         switch (wire)
         {
-        case Wire::Responses:
-        {
+        case Wire::Responses: {
             // {output:[{type:"message", content:[{type:"output_text", text}]}]}
             const auto output = root.find("output");
             if (output != root.end() && output->is_array())
@@ -363,8 +358,7 @@ std::string ParseWireResponse(Wire wire, const std::string &response)
             const auto direct = root.find("output_text");
             return direct != root.end() && direct->is_string() ? direct->get<std::string>() : std::string{};
         }
-        case Wire::Anthropic:
-        {
+        case Wire::Anthropic: {
             // {content:[{type:"text", text}]}；也接受 content 直接是字符串的兼容实现。
             const auto content = root.find("content");
             if (content == root.end())
@@ -373,8 +367,7 @@ std::string ParseWireResponse(Wire wire, const std::string &response)
                 return content->get<std::string>();
             return JoinPartTexts(*content);
         }
-        case Wire::Gemini:
-        {
+        case Wire::Gemini: {
             // {candidates:[{content:{parts:[{text}]}}]}
             const auto candidates = root.find("candidates");
             if (candidates == root.end() || !candidates->is_array() || candidates->empty())
@@ -386,8 +379,7 @@ std::string ParseWireResponse(Wire wire, const std::string &response)
             return parts != content->end() ? JoinPartTexts(*parts) : std::string{};
         }
         case Wire::Chat:
-        default:
-        {
+        default: {
             const auto choices = root.find("choices");
             if (choices == root.end() || !choices->is_array() || choices->empty())
                 return {};
@@ -416,8 +408,8 @@ std::string ParseWireResponse(Wire wire, const std::string &response)
 
 // 四种格式共用一个批量入口：一条文本一个请求，词表释义只要一句译文。
 std::vector<std::string> TextTranslateBatchOpenAi(const CustomTranslation::Config &config,
-                                                  const std::vector<std::string> &texts,
-                                                  const std::string &source, const std::string &target)
+                                                  const std::vector<std::string> &texts, const std::string &source,
+                                                  const std::string &target)
 {
     std::vector<std::string> results(texts.size());
     if (texts.empty() || !CustomTranslation::IsSupportedEndpoint(config.endpoint) || target.empty() ||
@@ -506,8 +498,7 @@ std::vector<std::string> TextTranslateBatchOpenAi(const CustomTranslation::Confi
         {
             g_last_error = performed != CURLE_OK
                                ? std::string("网络错误：") + curl_easy_strerror(performed)
-                               : "HTTP " + std::to_string(status) + "：" +
-                                     CleanGloss(response.text).substr(0, 160);
+                               : "HTTP " + std::to_string(status) + "：" + CleanGloss(response.text).substr(0, 160);
         }
     }
 

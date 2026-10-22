@@ -351,10 +351,9 @@ json::object ExportAllUserDictionaries()
         const std::string filter = kind == "pinyin" ? "WHERE dictionary=?1 AND operation='upsert' "
                                                     : "WHERE dictionary=?1 AND operation='upsert' AND user_inserted=1 ";
         std::string error;
-        Stmt stmt = Prepare(db.get(),
-                            "SELECT key,value,weight,display FROM user_dictionary_operations " + filter +
-                                "ORDER BY key,value",
-                            error);
+        Stmt stmt = Prepare(
+            db.get(),
+            "SELECT key,value,weight,display FROM user_dictionary_operations " + filter + "ORDER BY key,value", error);
         if (!stmt || !BindText(stmt.get(), 1, kind))
             return Result(false, "读取用户词库失败：" + error);
         while (sqlite3_step(stmt.get()) == SQLITE_ROW)
@@ -369,8 +368,8 @@ json::object ExportAllUserDictionaries()
             const std::string display = text(3);
             if (kind == "pinyin" && HelpcodeUtils::count_utf8_chars(value) <= 1)
                 continue;
-            content << source.label << '\t' << key << '\t' << (kind == "english" ? display : value) << '\t'
-                    << weight << '\n';
+            content << source.label << '\t' << key << '\t' << (kind == "english" ? display : value) << '\t' << weight
+                    << '\n';
             ++count;
         }
     }
@@ -1130,18 +1129,17 @@ json::object HandleEnglish(const json::object &request)
         return Result(false, "打开英文词库失败：" + error);
     // 候选词释义：code 传入目标语种时，改查 zh_glosses（词头 + 该语种释义）。
     const std::string language = StringValue(request, "code");
-    const bool gloss_query = action == "query" &&
-                             (language == "fr" || language == "ja" || language == "es" || language == "ru" ||
-                              language == "de" || language == "ko" || language == "th" || language == "vi" ||
-                              language == "it");
+    const bool gloss_query = action == "query" && (language == "fr" || language == "ja" || language == "es" ||
+                                                   language == "ru" || language == "de" || language == "ko" ||
+                                                   language == "th" || language == "vi" || language == "it");
     if (gloss_query)
     {
         Stmt stmt;
         if (word.empty())
         {
-            stmt = Prepare(db.get(),
-                           "SELECT chinese,gloss,0 FROM zh_glosses WHERE lang=?1 ORDER BY chinese" + Paging::Sql(request),
-                           error);
+            stmt = Prepare(
+                db.get(),
+                "SELECT chinese,gloss,0 FROM zh_glosses WHERE lang=?1 ORDER BY chinese" + Paging::Sql(request), error);
             if (stmt)
                 BindText(stmt.get(), 1, language);
         }

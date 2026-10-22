@@ -483,8 +483,8 @@ bool EnglishDictionary::ensure_target_gloss_statement()
     // 旧词库没有 zh_glosses：记下来，别每次候选刷新都重试一次 prepare。
     if (zh_target_unavailable_ || !ensure_query_statement())
         return false;
-    if (sqlite3_prepare_v2(db_, "SELECT gloss FROM zh_glosses WHERE chinese=?1 AND lang=?2", -1,
-                           &zh_target_statement_, nullptr) != SQLITE_OK)
+    if (sqlite3_prepare_v2(db_, "SELECT gloss FROM zh_glosses WHERE chinese=?1 AND lang=?2", -1, &zh_target_statement_,
+                           nullptr) != SQLITE_OK)
     {
         zh_target_statement_ = nullptr;
         zh_target_unavailable_ = true;

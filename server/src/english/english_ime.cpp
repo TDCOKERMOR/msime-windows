@@ -201,8 +201,7 @@ bool IsCurrent(const std::string &input, uint64_t generation, bool dedicated_mod
            g_dedicated_mode == dedicated_mode;
 }
 
-void RequestTranslations(std::vector<TranslationQuery> queries, bool use_local_dictionary,
-                         std::string target_language)
+void RequestTranslations(std::vector<TranslationQuery> queries, bool use_local_dictionary, std::string target_language)
 {
     {
         std::lock_guard lock(g_mutex);

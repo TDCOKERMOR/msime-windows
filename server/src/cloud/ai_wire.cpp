@@ -99,8 +99,8 @@ std::string NormalizeEndpoint(const std::string &raw, Wire wire, const std::stri
     return endpoint;
 }
 
-nlohmann::json BuildBody(Wire wire, const std::string &model, const std::string &system,
-                         const std::string &user, int max_tokens, double temperature)
+nlohmann::json BuildBody(Wire wire, const std::string &model, const std::string &system, const std::string &user,
+                         int max_tokens, double temperature)
 {
     using nlohmann::json;
     switch (wire)
@@ -128,8 +128,8 @@ nlohmann::json BuildBody(Wire wire, const std::string &model, const std::string 
                 {"temperature", temperature},
                 {"max_tokens", max_tokens},
                 {"stream", false},
-                {"messages", json::array({{{"role", "system"}, {"content", system}},
-                                          {{"role", "user"}, {"content", user}}})}};
+                {"messages",
+                 json::array({{{"role", "system"}, {"content", system}}, {{"role", "user"}, {"content", user}}})}};
     }
 }
 
@@ -162,8 +162,7 @@ std::string ExtractText(Wire wire, const std::string &response)
             return {};
         switch (wire)
         {
-        case Wire::Responses:
-        {
+        case Wire::Responses: {
             const auto output = root.find("output");
             if (output != root.end() && output->is_array())
             {
@@ -182,8 +181,7 @@ std::string ExtractText(Wire wire, const std::string &response)
             const auto direct = root.find("output_text");
             return direct != root.end() && direct->is_string() ? direct->get<std::string>() : std::string{};
         }
-        case Wire::Anthropic:
-        {
+        case Wire::Anthropic: {
             const auto content = root.find("content");
             if (content == root.end())
                 return {};
@@ -191,8 +189,7 @@ std::string ExtractText(Wire wire, const std::string &response)
                 return content->get<std::string>();
             return JoinPartTexts(*content);
         }
-        case Wire::Gemini:
-        {
+        case Wire::Gemini: {
             const auto candidates = root.find("candidates");
             if (candidates == root.end() || !candidates->is_array() || candidates->empty())
                 return {};
@@ -203,8 +200,7 @@ std::string ExtractText(Wire wire, const std::string &response)
             return parts != content->end() ? JoinPartTexts(*parts) : std::string{};
         }
         case Wire::Chat:
-        default:
-        {
+        default: {
             const auto choices = root.find("choices");
             if (choices == root.end() || !choices->is_array() || choices->empty())
                 return {};
@@ -252,8 +248,7 @@ std::vector<Header> AuthHeaders(Wire wire, const std::string &api_key)
     return headers;
 }
 
-Outcome Send(const std::string &url, Wire wire, const std::string &api_key, const std::string &payload,
-             long timeout_ms)
+Outcome Send(const std::string &url, Wire wire, const std::string &api_key, const std::string &payload, long timeout_ms)
 {
     Outcome outcome;
     CURL *curl = curl_easy_init();

@@ -341,17 +341,16 @@ bool SetConfiguredCustomTranslationString(const std::string &key, const std::str
     else if (key == "prompt_id" && (value == "custom_1" || value == "custom_2" || value == "custom_3"))
         target = &g_custom_translation.prompt_id;
     else if (key == "format" && (value == "openai" || value == "responses" || value == "anthropic" ||
-                                  value == "gemini" || value == "deeplx"))
+                                 value == "gemini" || value == "deeplx"))
         target = &g_custom_translation.format;
     if (!target || !WriteConfiguredValue("custom_translation", key, EscapeTomlBasicString(value)))
         return false;
     *target = value;
     if (key == "prompt" || key.compare(0, 14, "prompt_custom_") == 0 || key == "prompt_id")
-        g_custom_translation.prompt = g_custom_translation.prompt_id == "custom_2"
-                                          ? g_custom_translation.prompt_custom_2
-                                      : g_custom_translation.prompt_id == "custom_3"
-                                          ? g_custom_translation.prompt_custom_3
-                                          : g_custom_translation.prompt_custom_1;
+        g_custom_translation.prompt =
+            g_custom_translation.prompt_id == "custom_2"   ? g_custom_translation.prompt_custom_2
+            : g_custom_translation.prompt_id == "custom_3" ? g_custom_translation.prompt_custom_3
+                                                           : g_custom_translation.prompt_custom_1;
     PublishTranslationConfig();
     return true;
 }

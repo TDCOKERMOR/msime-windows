@@ -324,8 +324,8 @@ ApiCredentialTest::Result TestTranslation(const ApiCredentialTest::Request &requ
     if (!translated.empty() && !translated.front().empty())
         return {true, "连接成功，翻译服务配置有效。"};
     const std::string detail = CustomTranslation::LastError();
-    return {false, detail.empty() ? "测试失败：服务未返回有效译文，请检查凭据、接口地址和网络。"
-                                  : "测试失败：" + detail};
+    return {false,
+            detail.empty() ? "测试失败：服务未返回有效译文，请检查凭据、接口地址和网络。" : "测试失败：" + detail};
 }
 } // namespace
 

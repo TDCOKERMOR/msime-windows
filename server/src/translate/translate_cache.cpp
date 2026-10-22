@@ -14,8 +14,8 @@ constexpr size_t kMaxCacheEntries = 4096;
 
 std::string Identity(const Query &query, const std::string &target_language, const std::string &vendor_scope)
 {
-    return vendor_scope + ":" + target_language + ":" +
-           (query.direction == Direction::EnglishToChinese ? "e:" : "z:") + query.key;
+    return vendor_scope + ":" + target_language + ":" + (query.direction == Direction::EnglishToChinese ? "e:" : "z:") +
+           query.key;
 }
 
 void RememberPositive(const std::string &identity, std::string gloss)
