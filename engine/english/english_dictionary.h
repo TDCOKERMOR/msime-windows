@@ -35,6 +35,16 @@ class EnglishDictionary
     static bool ensure_schema(const std::string &db_path);
     static bool upsert_gloss(const std::string &db_path, bool chinese_to_english, const std::string &key,
                              const std::string &gloss, const std::string &language = {});
+    // 一条待落库的译文。词条与整句共用。
+    struct GlossEntry
+    {
+        bool chinese_to_english = true;
+        std::string key;
+        std::string gloss;
+        std::string language;
+    };
+    // 批量写回：一轮翻译十几条，逐条 open/fsync/close 会让候选窗明显卡顿。
+    static bool upsert_glosses(const std::string &db_path, const std::vector<GlossEntry> &entries);
 
   private:
     bool ensure_query_statement();

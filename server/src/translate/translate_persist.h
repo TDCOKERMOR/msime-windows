@@ -15,4 +15,12 @@ bool ShouldPersist(const Query &query, const std::string &gloss);
 
 // 查得到就入本地库：词条进词表，整句也进——同一句话再打一次就不必再问云端。
 void PersistGloss(const Query &query, const std::string &gloss, const std::string &target_language);
+
+// 批量落库：一轮十几条，逐条写会多出十几次 open 与 fsync。
+struct GlossWrite
+{
+    Query query;
+    std::string gloss;
+};
+void PersistGlosses(const std::vector<GlossWrite> &writes, const std::string &target_language);
 } // namespace Translate

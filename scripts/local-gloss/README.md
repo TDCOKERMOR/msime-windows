@@ -4,6 +4,21 @@
 `en / fr / ja / es / ru / de / ko / th / vi / it` 十个目标语种，本地查不到时
 再交给设置里的在线服务（选 `ai` 就是直接走 AI 辅助那套接口）。
 
+## 工具
+
+`tools/glossctl` 是这套数据的命令行工具，纯 Go + `sqlite3.dll`，不引第三方依赖：
+
+```
+glossctl stats  --db english.db
+glossctl export --source 旧english.db --out local_glosses.db
+glossctl merge  --source 旧english.db --target english.db
+glossctl verify --db english.db
+```
+
+实测：225.92 万条导出 33.3 秒（约 16 万条/秒），导出库 182.5 MB，校验 0 问题。
+把 `sqlite3.dll` 放到 exe 同目录即可运行；建表语句与 engine 侧 `ensure_schema` 逐字一致
+（`COLLATE BINARY` + `WITHOUT ROWID`）。
+
 ## 数据形状
 
 新增一张表，和现有两张释义表并列存在 `english.db` 里：

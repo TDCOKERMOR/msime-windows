@@ -187,6 +187,73 @@ bool EnglishDictionary::upsert_gloss(const std::string &db_path, bool chinese_to
     return ok;
 }
 
+bool EnglishDictionary::upsert_glosses(const std::string &db_path, const std::vector<GlossEntry> &entries)
+{
+    if (db_path.empty() || entries.empty() || !ensure_schema(db_path))
+        return false;
+
+    sqlite3 *database = nullptr;
+    if (sqlite3_open_v2(db_path.c_str(), &database, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, nullptr) != SQLITE_OK)
+    {
+        if (database != nullptr)
+            sqlite3_close(database);
+        return false;
+    }
+    sqlite3_busy_timeout(database, 250);
+    // 一次开库、一个事务、三条预备语句：不再每条译文都 fsync 一次。
+    const bool transaction = sqlite3_exec(database, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) == SQLITE_OK;
+
+    sqlite3_stmt *zh_target = nullptr;
+    sqlite3_stmt *zh_en = nullptr;
+    sqlite3_stmt *en_zh = nullptr;
+    bool ok = transaction;
+    for (const auto &entry : entries)
+    {
+        if (!ok || entry.key.empty() || entry.gloss.empty())
+            continue;
+        const bool target_language = entry.chinese_to_english && !entry.language.empty() && entry.language != "en";
+        sqlite3_stmt **slot = target_language ? &zh_target : (entry.chinese_to_english ? &zh_en : &en_zh);
+        if (*slot == nullptr)
+        {
+            const char *sql = target_language
+                                  ? "INSERT OR REPLACE INTO zh_glosses(chinese,lang,gloss) VALUES(?1,?2,?3)"
+                                  : (entry.chinese_to_english
+                                         ? "INSERT OR REPLACE INTO zh_en_glosses(chinese,english_gloss) VALUES(?1,?2)"
+                                         : "INSERT OR REPLACE INTO en_zh_glosses(english,chinese_gloss) VALUES(?1,?2)");
+            if (sqlite3_prepare_v2(database, sql, -1, slot, nullptr) != SQLITE_OK)
+            {
+                ok = false;
+                break;
+            }
+        }
+        sqlite3_stmt *stmt = *slot;
+        sqlite3_reset(stmt);
+        sqlite3_clear_bindings(stmt);
+        bool bound = sqlite3_bind_text(stmt, 1, entry.key.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK;
+        if (bound && target_language)
+            bound = sqlite3_bind_text(stmt, 2, entry.language.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+                    sqlite3_bind_text(stmt, 3, entry.gloss.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK;
+        else if (bound)
+            bound = sqlite3_bind_text(stmt, 2, entry.gloss.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK;
+        if (!bound || sqlite3_step(stmt) != SQLITE_DONE)
+        {
+            ok = false;
+            break;
+        }
+    }
+
+    if (zh_target != nullptr)
+        sqlite3_finalize(zh_target);
+    if (zh_en != nullptr)
+        sqlite3_finalize(zh_en);
+    if (en_zh != nullptr)
+        sqlite3_finalize(en_zh);
+    if (transaction)
+        sqlite3_exec(database, ok ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
+    sqlite3_close(database);
+    return ok;
+}
+
 void EnglishDictionary::load_custom_translations()
 {
     custom_en_zh_.clear();

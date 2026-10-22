@@ -65,6 +65,7 @@ std::vector<Result> ReviewPending(const RuntimeConfig &config, const std::vector
             const std::string target = source == "en" ? std::string("zh") : target_language;
             const auto fixes =
                 CustomTranslation::ReviewTranslations(config.custom, texts, translations, source, target, sentence);
+            std::vector<GlossWrite> writes;
             for (size_t i = 0; i < group.size() && i < fixes.size(); ++i)
             {
                 if (fixes[i].empty())
@@ -76,9 +77,11 @@ std::vector<Result> ReviewPending(const RuntimeConfig &config, const std::vector
                 if (!ShouldPersist(group[i]->query, gloss))
                     continue;
                 RememberPositive(Identity(group[i]->query, target_language, vendor_scope), gloss);
-                PersistGloss(group[i]->query, gloss, target_language);
+                writes.push_back({group[i]->query, gloss});
                 corrections.push_back({group[i]->query.key, group[i]->query.direction, gloss});
             }
+            // 一组最多十几条，一次写完。
+            PersistGlosses(writes, target_language);
         }
     }
     return corrections;

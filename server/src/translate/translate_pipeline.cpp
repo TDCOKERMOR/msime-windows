@@ -30,6 +30,8 @@ void ApplyTranslatedGroup(const RuntimeConfig &config, const std::vector<Query> 
                           std::vector<PendingReview> &pending)
 {
     (void)config; // 提供方与凭据只在 TranslateGroup 里用，这里只需要结果本身
+    std::vector<GlossWrite> writes;
+    writes.reserve(group.size());
     for (size_t i = 0; i < group.size(); ++i)
     {
         // 结果数组比请求短，说明提供方的批次预算先用完了，后面的词根本没有发出，不算失败。
@@ -43,7 +45,7 @@ void ApplyTranslatedGroup(const RuntimeConfig &config, const std::vector<Query> 
             continue;
         }
         RememberPositive(identity, gloss);
-        PersistGloss(group[i], gloss, target_language);
+        writes.push_back({group[i], gloss});
         results.push_back({group[i].key, group[i].direction, gloss});
         // 译完先上屏，再交给校对；校对结果只回写词库与缓存，不阻塞这一帧。
         if (review_enabled && pending.size() < kMaxPendingPerRound)
@@ -52,6 +54,8 @@ void ApplyTranslatedGroup(const RuntimeConfig &config, const std::vector<Query> 
             pending.push_back({group[i], gloss, source, sentence});
         }
     }
+    // 一整批写完再落库：一次 open、一个事务，不再每条 fsync。
+    PersistGlosses(writes, target_language);
 }
 
 void TranslateGroup(const RuntimeConfig &config, const std::vector<Query> &group, const std::string &source,
