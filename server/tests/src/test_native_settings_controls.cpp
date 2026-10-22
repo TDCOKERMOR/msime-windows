@@ -4,18 +4,22 @@
 
 #include "msimeui/Window.h"
 
+#include <functional>
 #include <memory>
 
 namespace
 {
 using native_settings::Button;
 
+// Counts live copies of itself and destroys the visual that owns the stored callback, the way a
+// handler that closes its modal dialog does. Reading only after teardown is the point: a handler
+// invoked through its owner's member is destroyed mid-call, a handler invoked from a copy is not.
 struct HandlerProbe
 {
     static int live;
     static int liveDuringCall;
 
-    explicit HandlerProbe(std::shared_ptr<Button> *owner) : owner_(owner)
+    explicit HandlerProbe(std::function<void()> *owner) : owner_(owner)
     {
         ++live;
     }
@@ -34,18 +38,22 @@ struct HandlerProbe
 
     void operator()() const
     {
-        // Closing the confirmation dialog releases its button and the stored callback
-        owner_->reset();
-        // Only statics are read after teardown, including when the callback has died
+        (*owner_)();
         liveDuringCall = live;
     }
 
   private:
-    std::shared_ptr<Button> *owner_;
+    std::function<void()> *owner_;
 };
 
 int HandlerProbe::live = 0;
 int HandlerProbe::liveDuringCall = -1;
+
+void ResetProbe()
+{
+    HandlerProbe::live = 0;
+    HandlerProbe::liveDuringCall = -1;
+}
 
 void CheckHandlerLifetime(WPARAM key)
 {
@@ -56,8 +64,9 @@ void CheckHandlerLifetime(WPARAM key)
     std::weak_ptr<Button> watch = button;
     raw->Attach(&window);
     raw->Arrange({0.0f, 0.0f, 100.0f, 30.0f});
-    HandlerProbe::liveDuringCall = -1;
-    raw->SetOnClick(HandlerProbe(&button));
+    ResetProbe();
+    std::function<void()> release = [&button]() { button.reset(); };
+    raw->SetOnClick(HandlerProbe(&release));
     REQUIRE_EQ(HandlerProbe::live, 1);
 
     if (key)
@@ -89,6 +98,26 @@ TEST_CASE(SettingsButtonEnterHandlerOutlivesTheDialogItCloses)
 TEST_CASE(SettingsButtonSpaceHandlerOutlivesTheDialogItCloses)
 {
     CheckHandlerLifetime(VK_SPACE);
+}
+
+TEST_CASE(SettingsLabelHandlerOutlivesTheVisualItDestroys)
+{
+    msimeui::Window window(L"settings-controls-tests", L"", 200, 200);
+    auto label = std::make_shared<native_settings::Label>(L"打开", native_settings::BodyStyle());
+    native_settings::Label *raw = label.get();
+    raw->Attach(&window);
+    raw->Arrange({0.0f, 0.0f, 100.0f, 30.0f});
+    ResetProbe();
+    std::function<void()> release = [&label]() { label.reset(); };
+    raw->SetOnClick(HandlerProbe(&release));
+
+    const POINT point{10, 10};
+    REQUIRE(raw->OnMouseDown(point, 0));
+    REQUIRE(raw->OnMouseUp(point, 0));
+
+    REQUIRE(!label);
+    REQUIRE(HandlerProbe::liveDuringCall >= 1);
+    REQUIRE_EQ(HandlerProbe::live, 0);
 }
 
 TEST_CASE(SettingsButtonIgnoresDisabledAndOutsideClicks)

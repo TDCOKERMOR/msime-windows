@@ -127,6 +127,7 @@ extern bool g_switch_language_shift_enabled;
 extern bool g_switch_language_ctrl_enabled;
 extern bool g_switch_language_ctrl_alt_space_enabled;
 extern bool g_character_set_shortcut_enabled;
+extern bool g_commit_pinyin_shift_enter_enabled;
 extern InputStateShortcutValues g_input_state_shortcuts;
 extern int g_candidate_page_size;
 extern std::string g_candidate_font;

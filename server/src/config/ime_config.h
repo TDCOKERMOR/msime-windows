@@ -298,6 +298,10 @@ const std::string &GetConfiguredCharacterSet();
 bool SetConfiguredCharacterSet(const std::string &character_set);
 bool GetConfiguredCharacterSetShortcutEnabled();
 bool SetConfiguredCharacterSetShortcutEnabled(bool enabled);
+// Shift+Enter commits the converted spelling under the Shuangpin scheme. Turning it off
+// leaves the chord to the plain Enter path, which commits the raw input.
+bool GetConfiguredPinyinCommitShortcutEnabled();
+bool SetConfiguredPinyinCommitShortcutEnabled(bool enabled);
 // "chinese" | "english" — default CN/EN when activating this IME.
 const std::string &GetConfiguredDefaultImeMode();
 bool SetConfiguredDefaultImeMode(const std::string &mode);

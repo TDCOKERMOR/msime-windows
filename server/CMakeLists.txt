@@ -377,6 +377,13 @@ set(SRC_FILES
     "./src/voice-input/cue_player.h"
     "./src/voice-input/mvi_utils.h"
     "./src/voice-input/voice_input_overlay_utils.cpp"
+    "./src/voice-input/voice_target.cpp"
+    "./src/voice-input/voice_target.h"
+    "./src/voice-input/voice_result_card.cpp"
+    "./src/voice-input/voice_result_card.h"
+    "./src/voice-input/voice_result_card_model.h"
+    "./src/voice-input/voice_overlay_layout.h"
+    "./src/voice-input/voice_commit_policy.h"
     "./src/main.cpp"
 )
 
@@ -402,6 +409,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE winhttp)
 target_link_libraries(${PROJECT_NAME} PRIVATE CURL::libcurl)
 target_link_libraries(${PROJECT_NAME} PRIVATE ZLIB::ZLIB)
 target_link_libraries(${PROJECT_NAME} PRIVATE d2d1 dwrite dwmapi shell32 shcore ole32 bcrypt)
+target_link_libraries(${PROJECT_NAME} PRIVATE oleaut32)
 
 # The helper executables below already build at /W4. The server itself -- the process that owns
 # every network call and the skin loader -- was still at the default /W3.

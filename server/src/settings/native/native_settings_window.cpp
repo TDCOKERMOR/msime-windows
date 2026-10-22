@@ -551,7 +551,10 @@ class Sidebar : public msimeui::Panel
             return;
         Select(index, true);
         if (onSelect_)
-            onSelect_(index);
+        {
+            const auto handler = onSelect_;
+            handler(index);
+        }
     }
 
     SizeF Measure(const SizeF &availableSize) override

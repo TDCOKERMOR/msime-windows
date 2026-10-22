@@ -188,7 +188,11 @@ class AboutRow : public msimeui::Panel
             return false;
         pressed_ = false;
         if (window_ && HitTest(window_->ClientPixelsToDips(point)) && onClick_)
-            onClick_();
+        {
+            // A handler that closes the dialog destroys this row and onClick_ mid-call.
+            const auto handler = onClick_;
+            handler();
+        }
         return true;
     }
 

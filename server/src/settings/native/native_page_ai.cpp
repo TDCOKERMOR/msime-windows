@@ -294,7 +294,10 @@ class ModelCombo : public msimeui::Visual
         Close();
         input_->SetText(model);
         if (onPicked_)
-            onPicked_(model);
+        {
+            const auto handler = onPicked_;
+            handler(model);
+        }
     }
 
     SizeF Measure(const SizeF &availableSize) override
@@ -375,7 +378,11 @@ class ModelCombo : public msimeui::Visual
         if (Contains(ArrowRect(), dip) && list_->Empty())
         {
             if (onFetch_)
-                onFetch_();
+            {
+                // A handler may tear down the visual that owns onFetch_ while it runs.
+                const auto handler = onFetch_;
+                handler();
+            }
             return true;
         }
         open_ ? Close() : Open();

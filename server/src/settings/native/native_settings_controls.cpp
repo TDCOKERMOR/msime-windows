@@ -689,7 +689,10 @@ bool Label::OnMouseUp(const POINT &point, WPARAM)
         return false;
     pressed_ = false;
     if (HitSelf(window_, *this, point) && onClick_)
-        onClick_();
+    {
+        const auto handler = onClick_;
+        handler();
+    }
     return true;
 }
 
@@ -1392,7 +1395,10 @@ void ToggleSwitch::Toggle()
 {
     SetChecked(!on_);
     if (onChanged_)
-        onChanged_(on_);
+    {
+        const auto handler = onChanged_;
+        handler(on_);
+    }
 }
 
 // ---------------------------------------------------------------------------------
@@ -2150,7 +2156,10 @@ void Dropdown::Commit(size_t index)
     InvalidateMeasure();
     InvalidateVisual();
     if (changed && onChanged_)
-        onChanged_(index, options_[index]);
+    {
+        const auto handler = onChanged_;
+        handler(index, options_[index]);
+    }
 }
 
 // ---------------------------------------------------------------------------------
@@ -2277,7 +2286,10 @@ bool CheckOption::OnMouseUp(const POINT &point, WPARAM)
         checked_ = !checked_;
         InvalidateVisual();
         if (onChanged_)
-            onChanged_(checked_);
+        {
+            const auto handler = onChanged_;
+            handler(checked_);
+        }
     }
     return true;
 }
@@ -2301,7 +2313,10 @@ bool CheckOption::OnKeyDown(WPARAM key, LPARAM)
     checked_ = !checked_;
     InvalidateVisual();
     if (onChanged_)
-        onChanged_(checked_);
+    {
+        const auto handler = onChanged_;
+        handler(checked_);
+    }
     return true;
 }
 
@@ -2400,7 +2415,10 @@ bool RadioOption::OnMouseUp(const POINT &point, WPARAM)
         checked_ = true;
         InvalidateVisual();
         if (onSelected_)
-            onSelected_();
+        {
+            const auto handler = onSelected_;
+            handler();
+        }
     }
     return true;
 }
@@ -2411,7 +2429,10 @@ std::shared_ptr<RadioOption> RadioGroup::Add(std::wstring text, std::string valu
     option->SetOnSelected([this, value]() {
         SetValue(value);
         if (onChanged_)
-            onChanged_(value);
+        {
+            const auto handler = onChanged_;
+            handler(value);
+        }
     });
     options_.emplace_back(std::move(value), option);
     return option;
@@ -2806,7 +2827,10 @@ TextField::TextField(Options options) : options_(std::move(options))
     box_->SetPlaceholderFontSize(options_.fontSize);
     box_->SetOnTextChanged([this](const std::wstring &text) {
         if (onChanged_)
-            onChanged_(text);
+        {
+            const auto handler = onChanged_;
+            handler(text);
+        }
     });
     box_->SetOnFocusChanged([this](bool focused) {
         if (!focused)
@@ -2816,7 +2840,10 @@ TextField::TextField(Options options) : options_(std::move(options))
             {
                 committed_ = text;
                 if (onCommit_)
-                    onCommit_(text);
+                {
+                    const auto handler = onCommit_;
+                    handler(text);
+                }
             }
         }
     });
@@ -2826,7 +2853,10 @@ TextField::TextField(Options options) : options_(std::move(options))
         {
             committed_ = text;
             if (onCommit_)
-                onCommit_(text);
+            {
+                const auto handler = onCommit_;
+                handler(text);
+            }
         }
     });
     SetChild(box_);
@@ -3034,7 +3064,10 @@ void NumberStepper::Change(int value)
     value_ = value;
     InvalidateVisual();
     if (onChanged_)
-        onChanged_(value_);
+    {
+        const auto handler = onChanged_;
+        handler(value_);
+    }
 }
 
 bool NumberStepper::OnMouseDown(const POINT &point, WPARAM)
@@ -3173,7 +3206,10 @@ bool Expander::OnMouseUp(const POINT &point, WPARAM)
     {
         SetExpanded(!expanded_);
         if (onToggled_)
-            onToggled_(expanded_);
+        {
+            const auto handler = onToggled_;
+            handler(expanded_);
+        }
     }
     return true;
 }

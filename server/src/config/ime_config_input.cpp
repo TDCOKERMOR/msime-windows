@@ -91,6 +91,19 @@ bool SetConfiguredCharacterSetShortcutEnabled(bool enabled)
     return true;
 }
 
+bool GetConfiguredPinyinCommitShortcutEnabled()
+{
+    return g_commit_pinyin_shift_enter_enabled;
+}
+
+bool SetConfiguredPinyinCommitShortcutEnabled(bool enabled)
+{
+    if (!WriteConfiguredValue("keybindings", "commit_pinyin_shift_enter", enabled ? "true" : "false"))
+        return false;
+    g_commit_pinyin_shift_enter_enabled = enabled;
+    return true;
+}
+
 const std::string &GetConfiguredDefaultImeMode()
 {
     return g_default_ime_mode;

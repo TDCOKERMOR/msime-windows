@@ -447,7 +447,10 @@ InputBox::InputBox(Options options) : options_(std::move(options))
             return;
         committed_ = text;
         if (onCommit_)
-            onCommit_(text);
+        {
+            const auto handler = onCommit_;
+            handler(text);
+        }
     };
     box_->SetOnFocusChanged([this, commit](bool focused) {
         if (!focused)
@@ -816,7 +819,11 @@ bool PlainButton::OnMouseUp(const POINT &point, WPARAM)
     pressed_ = false;
     InvalidateVisual();
     if (Hit(window_, *this, point) && onClick_ && !disabled_)
-        onClick_();
+    {
+        // A handler may tear down the visual that owns onClick_ while it runs.
+        const auto handler = onClick_;
+        handler();
+    }
     return true;
 }
 
@@ -1039,7 +1046,10 @@ bool PlainExpander::OnMouseUp(const POINT &point, WPARAM)
         if (window_)
             window_->RequestAnimationFrame();
         if (onToggled_)
-            onToggled_(expanded_);
+        {
+            const auto handler = onToggled_;
+            handler(expanded_);
+        }
     }
     return true;
 }

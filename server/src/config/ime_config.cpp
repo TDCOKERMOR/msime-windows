@@ -55,6 +55,7 @@ bool g_switch_language_shift_enabled = true;
 bool g_switch_language_ctrl_enabled = false;
 bool g_switch_language_ctrl_alt_space_enabled = true;
 bool g_character_set_shortcut_enabled = true;
+bool g_commit_pinyin_shift_enter_enabled = true;
 InputStateShortcutValues g_input_state_shortcuts = [] {
     InputStateShortcutValues values;
     const auto defaults = FanyImeInputStateShortcuts::Defaults();
@@ -774,6 +775,7 @@ bool LoadImeConfig()
             g_switch_language_ctrl_alt_space_enabled =
                 tbl["keybindings"]["switch_language_ctrl_alt_space"].value_or(legacy_ctrl_alt_space);
             g_character_set_shortcut_enabled = tbl["keybindings"]["toggle_character_set_ctrl_shift_f"].value_or(true);
+            g_commit_pinyin_shift_enter_enabled = tbl["keybindings"]["commit_pinyin_shift_enter"].value_or(true);
             for (std::size_t i = 0; i < g_input_state_shortcuts.size(); ++i)
             {
                 const auto &definition = FanyImeInputStateShortcuts::Definitions[i];

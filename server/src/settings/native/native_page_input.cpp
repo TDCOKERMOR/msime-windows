@@ -502,7 +502,11 @@ class GhostButton : public msimeui::Visual
             return false;
         pressed_ = false;
         if (HitSelf(window_, *this, point) && onClick_)
-            onClick_();
+        {
+            // A handler may tear down the visual that owns onClick_ while it runs.
+            const auto handler = onClick_;
+            handler();
+        }
         return true;
     }
 
@@ -594,7 +598,11 @@ class TestButton : public msimeui::Visual
             return false;
         pressed_ = false;
         if (HitSelf(window_, *this, point) && onClick_)
-            onClick_();
+        {
+            // A handler may tear down the visual that owns onClick_ while it runs.
+            const auto handler = onClick_;
+            handler();
+        }
         return true;
     }
 
@@ -692,7 +700,10 @@ class BareRadio : public msimeui::Visual
             return false;
         pressed_ = false;
         if (HitSelf(window_, *this, point) && !checked_ && onSelected_)
-            onSelected_();
+        {
+            const auto handler = onSelected_;
+            handler();
+        }
         return true;
     }
 
@@ -944,7 +955,10 @@ class ApiField : public msimeui::Panel
             return;
         committed_ = text;
         if (onCommit_)
-            onCommit_(text);
+        {
+            const auto handler = onCommit_;
+            handler(text);
+        }
     }
 
     bool password_ = false;

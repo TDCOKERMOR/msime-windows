@@ -38,9 +38,18 @@ target_link_libraries(test_voice_lock_recovery
     CURL::libcurl
     fmt::fmt
     nlohmann_json::nlohmann_json
-    user32)
+    user32
+    shcore)
 add_test(NAME voice_lock_recovery COMMAND test_voice_lock_recovery)
 set_tests_properties(voice_lock_recovery PROPERTIES TIMEOUT 60)
+
+# Phase-A voice input target snapshot: pure policy in voice_target.h only. The
+# Windows/UIA adapter (voice_target.cpp) is host-only and stays out of this
+# standalone target; it links no engine, dictionary or third-party dependency.
+add_executable(test_voice_target src/test_voice_target.cpp)
+target_include_directories(test_voice_target PRIVATE ../src)
+target_compile_features(test_voice_target PRIVATE cxx_std_17)
+add_test(NAME voice_target COMMAND test_voice_target)
 
 set(TEST_SOURCE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
@@ -241,3 +250,59 @@ add_test(NAME webview_contract COMMAND test_webview_contract
     "${MSIME_ENGINE_DIR}/contracts/webview/fixtures.json")
 
 
+add_executable(test_voice_result_card src/test_voice_result_card.cpp)
+target_include_directories(test_voice_result_card PRIVATE ../src)
+target_compile_features(test_voice_result_card PRIVATE cxx_std_17)
+add_test(NAME voice_result_card COMMAND test_voice_result_card)
+# Phase-C voice commit routing policy: pure decisions in voice_commit_policy.h
+# and voice_target.h only; no Windows adapter, engine or dictionary dependency.
+add_executable(test_voice_commit_policy src/test_voice_commit_policy.cpp)
+target_include_directories(test_voice_commit_policy PRIVATE ../src)
+target_compile_features(test_voice_commit_policy PRIVATE cxx_std_17)
+add_test(NAME voice_commit_policy COMMAND test_voice_commit_policy)
+
+# Exercise production lifecycle bodies without microphone, credentials or UI.
+# Share the body extractor already used by the DLL's standalone fixtures.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(voice_service_source "${CMAKE_CURRENT_SOURCE_DIR}/../src/voice-input/voice_input_service.cpp")
+set(voice_service_generator "${CMAKE_CURRENT_SOURCE_DIR}/generate_voice_service_fixture.py")
+set(voice_fixture_helpers "${MSIME_REPO_ROOT}/windows/tests")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${voice_service_source}" "${voice_service_generator}" "${voice_fixture_helpers}/generate_reconnect_fixture.py")
+execute_process(COMMAND "${Python3_EXECUTABLE}" "${voice_service_generator}"
+    "${voice_service_source}" "${voice_fixture_helpers}" "${CMAKE_CURRENT_BINARY_DIR}/voice_service_source.h"
+    COMMAND_ERROR_IS_FATAL ANY)
+add_executable(test_voice_service_lifecycle src/test_voice_service_lifecycle.cpp)
+target_include_directories(test_voice_service_lifecycle PRIVATE ../src "${CMAKE_CURRENT_BINARY_DIR}")
+target_compile_features(test_voice_service_lifecycle PRIVATE cxx_std_17)
+add_test(NAME voice_service_lifecycle COMMAND test_voice_service_lifecycle)
+set_tests_properties(voice_service_lifecycle PROPERTIES TIMEOUT 15)
+
+if(WIN32)
+    # Real focus/UIA coverage is opt-in; ordinary CTest runs never take focus.
+    add_executable(test_voice_target_windows src/test_voice_target_windows.cpp
+        ../src/voice-input/voice_target.cpp)
+    target_include_directories(test_voice_target_windows PRIVATE ../src)
+    target_compile_features(test_voice_target_windows PRIVATE cxx_std_17)
+    target_compile_definitions(test_voice_target_windows PRIVATE NOMINMAX UNICODE _UNICODE)
+    target_link_libraries(test_voice_target_windows PRIVATE user32 ole32 oleaut32 uiautomationcore)
+    add_test(NAME voice_target_windows COMMAND test_voice_target_windows)
+    set_tests_properties(voice_target_windows PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_executable(test_voice_overlay_layout src/test_voice_overlay_layout.cpp)
+    target_include_directories(test_voice_overlay_layout PRIVATE ../src)
+    target_compile_features(test_voice_overlay_layout PRIVATE cxx_std_17)
+    target_compile_definitions(test_voice_overlay_layout PRIVATE NOMINMAX)
+    add_test(NAME voice_overlay_layout COMMAND test_voice_overlay_layout)
+
+    # Uses the real overlay on a message-only window: never shows UI or takes focus.
+    find_package(tomlplusplus CONFIG REQUIRED)
+    add_executable(test_voice_overlay_threading src/test_voice_overlay_threading.cpp
+        ../src/voice-input/wave_overlay.cpp ../src/voice-input/voice_input_overlay_utils.cpp)
+    target_include_directories(test_voice_overlay_threading PRIVATE ../src)
+    target_compile_features(test_voice_overlay_threading PRIVATE cxx_std_17)
+    target_compile_definitions(test_voice_overlay_threading PRIVATE NOMINMAX UNICODE _UNICODE)
+    target_link_libraries(test_voice_overlay_threading PRIVATE tomlplusplus::tomlplusplus d2d1 dwrite dwmapi shcore)
+    add_test(NAME voice_overlay_threading COMMAND test_voice_overlay_threading)
+    set_tests_properties(voice_overlay_threading PROPERTIES TIMEOUT 10)
+endif()
