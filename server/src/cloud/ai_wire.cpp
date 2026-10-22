@@ -1,6 +1,30 @@
 #include "ai_wire.h"
 
+#include "utils/network_proxy.h"
+#include <curl/curl.h>
 #include <vector>
+
+namespace
+{
+struct ResponseBuffer
+{
+    std::string text;
+    bool overflow = false;
+};
+
+size_t WriteResponse(char *data, size_t size, size_t count, void *user)
+{
+    const size_t bytes = size * count;
+    auto *buffer = static_cast<ResponseBuffer *>(user);
+    if (bytes > 1024 * 1024 - (std::min)(buffer->text.size(), static_cast<size_t>(1024 * 1024)))
+    {
+        buffer->overflow = true;
+        return 0;
+    }
+    buffer->text.append(data, bytes);
+    return bytes;
+}
+} // namespace
 
 namespace AiWire
 {
@@ -226,5 +250,46 @@ std::vector<Header> AuthHeaders(Wire wire, const std::string &api_key)
         break;
     }
     return headers;
+}
+
+Outcome Send(const std::string &url, Wire wire, const std::string &api_key, const std::string &payload,
+             long timeout_ms)
+{
+    Outcome outcome;
+    CURL *curl = curl_easy_init();
+    if (!curl)
+    {
+        outcome.error = "curl init failed";
+        return outcome;
+    }
+
+    curl_slist *headers = curl_slist_append(nullptr, "Content-Type: application/json; charset=utf-8");
+    std::vector<std::string> auth_lines;
+    for (const auto &header : AuthHeaders(wire, api_key))
+        auth_lines.push_back(header.name + ": " + header.value);
+    for (const auto &line : auth_lines)
+        headers = curl_slist_append(headers, line.c_str());
+
+    ResponseBuffer response;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    NetworkProxy::ApplyToCurl(curl);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteResponse);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, timeout_ms);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(payload.size()));
+
+    const CURLcode performed = curl_easy_perform(curl);
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &outcome.status);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    outcome.ok = performed == CURLE_OK && !response.overflow;
+    outcome.body = std::move(response.text);
+    if (performed != CURLE_OK)
+        outcome.error = curl_easy_strerror(performed);
+    return outcome;
 }
 } // namespace AiWire

@@ -35,4 +35,17 @@ struct Header
     std::string value;
 };
 std::vector<Header> AuthHeaders(Wire wire, const std::string &api_key);
+
+// 一次请求的结果。ok 只表示「网络层和载荷层都没出错」，业务失败看 status 与 body。
+struct Outcome
+{
+    bool ok = false;
+    long status = 0;
+    std::string body;
+    std::string error;
+};
+
+// 按协议带上鉴权头发一次 POST。四家共用，调用方不再自己拼 curl。
+Outcome Send(const std::string &url, Wire wire, const std::string &api_key, const std::string &payload,
+             long timeout_ms);
 } // namespace AiWire
