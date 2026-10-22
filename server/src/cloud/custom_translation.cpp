@@ -14,6 +14,8 @@ namespace
 constexpr long kTimeoutMs = 4000;
 // 整句翻译一条就是一段话，模型要多想几拍；2.5s 只够一个词。
 constexpr long kSentenceTimeoutMs = 12000;
+// 校对比翻译短：只回需要改的行，6 秒够一段短回复；整句校对沿用整句的超时。
+constexpr long kReviewTimeoutMs = 6000;
 // 最近一次失败的原因，供「测试配置」展示；每次批量调用开始时清空。
 thread_local std::string g_last_error;
 constexpr size_t kMaxResponseBytes = 1024 * 1024;
@@ -623,6 +625,135 @@ std::vector<std::string> TextTranslateBatch(const Config &config, const std::vec
     curl_easy_cleanup(curl);
     return results;
 }
+std::vector<std::string> ReviewTranslations(const Config &config, const std::vector<std::string> &texts,
+                                            const std::vector<std::string> &translations, const std::string &source,
+                                            const std::string &target, bool sentence)
+{
+    std::vector<std::string> fixes(texts.size());
+    // deeplx 没有聊天接口，做不了校对；这一条路径直接视为「无需修改」。
+    if (texts.empty() || texts.size() != translations.size() || config.format == "deeplx" ||
+        !IsSupportedEndpoint(config.endpoint) || config.model.empty())
+        return fixes;
+
+    std::string user;
+    user.reserve(texts.size() * 32);
+    for (size_t i = 0; i < texts.size(); ++i)
+    {
+        user += std::to_string(i + 1);
+        user += "|";
+        user += texts[i];
+        user += "|";
+        user += translations[i];
+        user += "\n";
+    }
+    const std::string system =
+        std::string("你是翻译校对员。下面每行是「编号|原文|译文」，译文是从") + OpenAiLanguageName(source) + "翻成" +
+        OpenAiLanguageName(target) +
+        "的。逐条检查译文是否准确、是否地道、是否只表达原文含义（尤其注意：单词不能拿包含它的复合词释义顶替）。"
+        "只输出需要修改的行，格式为「编号|修正后的译文」，不要解释；全部正确就不要输出任何内容。";
+
+    const Wire wire = WireFromFormat(config.format);
+    const std::string url = ExpandModel(NormalizeEndpoint(config.endpoint, wire), config.model);
+    CURL *curl = curl_easy_init();
+    if (!curl)
+        return fixes;
+
+    curl_slist *headers = nullptr;
+    headers = curl_slist_append(headers, "Content-Type: application/json; charset=utf-8");
+    std::string auth_header;
+    switch (wire)
+    {
+    case Wire::Anthropic:
+        if (!config.api_key.empty())
+        {
+            auth_header = "x-api-key: " + config.api_key;
+            headers = curl_slist_append(headers, auth_header.c_str());
+        }
+        headers = curl_slist_append(headers, "anthropic-version: 2023-06-01");
+        break;
+    case Wire::Gemini:
+        if (!config.api_key.empty())
+        {
+            auth_header = "x-goog-api-key: " + config.api_key;
+            headers = curl_slist_append(headers, auth_header.c_str());
+        }
+        break;
+    case Wire::Chat:
+    case Wire::Responses:
+    default:
+        if (!config.api_key.empty())
+        {
+            auth_header = "Authorization: Bearer " + config.api_key;
+            headers = curl_slist_append(headers, auth_header.c_str());
+        }
+        break;
+    }
+
+    const long timeout_ms = sentence ? kSentenceTimeoutMs : kReviewTimeoutMs;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    NetworkProxy::ApplyToCurl(curl);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteResponse);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, timeout_ms);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    const std::string payload = BuildWireBody(wire, config.model, system, user, 1024).dump();
+    ResponseBuffer response;
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(payload.size()));
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    const CURLcode performed = curl_easy_perform(curl);
+    long status = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    if (performed != CURLE_OK || response.overflow || status < 200 || status >= 300)
+        return fixes;
+
+    const std::string reply = ParseWireResponse(wire, response.text);
+    const auto trim = [](std::string value) {
+        const auto first = value.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos)
+            return std::string{};
+        const auto last = value.find_last_not_of(" \t\r\n");
+        return value.substr(first, last - first + 1);
+    };
+    size_t start = 0;
+    while (start < reply.size())
+    {
+        const size_t end = reply.find('\n', start);
+        std::string line = trim(reply.substr(start, end == std::string::npos ? std::string::npos : end - start));
+        start = end == std::string::npos ? reply.size() : end + 1;
+        size_t bar = line.find('|');
+        size_t width = 1;
+        if (bar == std::string::npos)
+        {
+            bar = line.find("\xEF\xBD\x9C"); // ｜
+            width = 3;
+        }
+        if (bar == std::string::npos || bar == 0)
+            continue;
+        int index = 0;
+        try
+        {
+            index = std::stoi(trim(line.substr(0, bar)));
+        }
+        catch (...)
+        {
+            continue;
+        }
+        if (index < 1 || static_cast<size_t>(index) > texts.size())
+            continue;
+        std::string fixed = trim(line.substr(bar + width));
+        if (fixed.size() >= 2 && fixed.front() == '"' && fixed.back() == '"')
+            fixed = fixed.substr(1, fixed.size() - 2);
+        if (!fixed.empty())
+            fixes[static_cast<size_t>(index) - 1] = fixed;
+    }
+    return fixes;
+}
+
 std::string LastError()
 {
     return g_last_error;

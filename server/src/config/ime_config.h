@@ -173,6 +173,8 @@ struct CustomTranslationConfig
     std::string api_key;
     // openai（Chat Completions，默认）| deeplx（旧的 DeepLX 兼容协议）
     std::string format = "openai";
+    // 译后校对：译完再让同一模型复核一遍，只把确实要改的条目写回词库。
+    bool review = true;
     // OpenAI 格式使用的模型名。
     std::string model = "gpt-4o-mini";
     // 自定义提示词：留空用内置的释义提示词，支持 {lang} 占位符。

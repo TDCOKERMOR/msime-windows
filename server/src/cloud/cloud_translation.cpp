@@ -30,6 +30,11 @@ constexpr size_t kMaxSentenceChars = 200;
 constexpr size_t kMaxPersistChars = 32;
 constexpr size_t kMaxPersistSentenceChars = 128;
 constexpr size_t kMaxCacheEntries = 4096;
+// 一轮最多校对多少条：校对是后台补一刀，不能无上限地拉长一个工作循环。
+// 与翻译侧一次请求的上限对齐：再多模型容易漏行，反而一条修正都拿不回来。
+constexpr size_t kMaxReviewItems = 12;
+// 校对线程的积压上限：超过就丢旧的一批，宁可漏校也不排长队。
+constexpr size_t kMaxReviewBacklog = 48;
 
 std::mutex g_mutex;
 std::condition_variable g_cv;
@@ -215,8 +220,18 @@ std::optional<ResolvedProvider> ResolveActiveProvider(const TranslationConfig &c
             return std::nullopt;
         break;
     case Provider::Custom:
-        resolved.custom = {CloudTranslation::TrimSecret(config.custom.endpoint),
-                           CloudTranslation::TrimSecret(config.custom.api_key)};
+        // 四协议、模型、提示词槽和校对开关都在这里落地：只拿 endpoint + api_key 会让
+        // 用户选的协议被默默换成 Chat Completions，模型也退回 gpt-4o-mini。
+        resolved.custom.endpoint = CloudTranslation::TrimSecret(config.custom.endpoint);
+        resolved.custom.api_key = CloudTranslation::TrimSecret(config.custom.api_key);
+        resolved.custom.format = config.custom.format;
+        resolved.custom.model = config.custom.model.empty() ? std::string("gpt-4o-mini") : config.custom.model;
+        resolved.custom.prompt = config.custom.prompt;
+        resolved.custom.prompt_id = config.custom.prompt_id;
+        resolved.custom.prompt_custom_1 = config.custom.prompt_custom_1;
+        resolved.custom.prompt_custom_2 = config.custom.prompt_custom_2;
+        resolved.custom.prompt_custom_3 = config.custom.prompt_custom_3;
+        resolved.custom.review = config.custom.review;
         if (!CustomTranslation::IsSupportedEndpoint(resolved.custom.endpoint))
             return std::nullopt;
         break;
@@ -248,9 +263,36 @@ void PersistGloss(const EnglishIme::TranslationQuery &query, const std::string &
                                     chinese_to_english ? target_language : std::string{});
 }
 
+// 一轮里已经译出来、等着校对的条目。source 决定校对提示词的方向（en→zh / zh→目标）。
+struct PendingReview
+{
+    EnglishIme::TranslationQuery query;
+    std::string gloss;
+    std::string source;
+    bool sentence = false;
+};
+
+// 校对单独开一条线程。若和翻译挤在同一个循环里，用户连着打字时
+// 下一句就得排队等校对跑完，反而更慢。
+struct ReviewJob
+{
+    std::vector<PendingReview> items;
+    CustomTranslation::Config custom;
+    std::string target_language;
+    std::string provider_scope;
+};
+
+std::mutex g_review_mutex;
+std::condition_variable g_review_cv;
+ReviewJob g_review_job;
+bool g_review_pending = false;
+std::thread g_review_worker;
+
 void ApplyTranslatedGroup(const std::vector<EnglishIme::TranslationQuery> &group,
-                          const std::vector<std::string> &translated, const std::string &target_language,
-                          const std::string &provider_scope, std::vector<EnglishIme::TranslationResult> &out)
+                          const std::vector<std::string> &translated, const std::string &source,
+                          const std::string &target_language, const std::string &provider_scope,
+                          std::vector<EnglishIme::TranslationResult> &out, bool sentence, bool review_enabled,
+                          std::vector<PendingReview> &pending)
 {
     for (size_t i = 0; i < group.size(); ++i)
     {
@@ -267,6 +309,9 @@ void ApplyTranslatedGroup(const std::vector<EnglishIme::TranslationQuery> &group
         RememberPositive(identity, gloss);
         PersistGloss(group[i], gloss, target_language);
         out.push_back({group[i].key, group[i].direction, gloss});
+        // 译完先上屏，再交给校对；校对结果只回写词库与缓存，不阻塞这一帧。
+        if (review_enabled && pending.size() < kMaxReviewItems)
+            pending.push_back({group[i], gloss, source, sentence});
     }
 }
 
@@ -292,7 +337,7 @@ std::vector<std::string> TranslateWithProvider(const ResolvedProvider &resolved,
 void TranslateGroup(const ResolvedProvider &resolved, const std::vector<EnglishIme::TranslationQuery> &group,
                     const std::string &source, const std::string &target, const std::string &target_language,
                     const std::string &provider_scope, std::vector<EnglishIme::TranslationResult> &out,
-                    bool sentence = false)
+                    std::vector<PendingReview> &pending, bool sentence = false)
 {
     std::vector<std::string> texts;
     texts.reserve(group.size());
@@ -302,7 +347,100 @@ void TranslateGroup(const ResolvedProvider &resolved, const std::vector<EnglishI
     // 整句与词条的超时、输出上限和提示词都不同：只在自定义服务上区分，其余提供方忽略这个标志。
     effective.custom.sentence = sentence;
     const auto translated = TranslateWithProvider(effective, texts, source, target);
-    ApplyTranslatedGroup(group, translated, target_language, provider_scope, out);
+    ApplyTranslatedGroup(group, translated, source, target_language, provider_scope, out, sentence,
+                         resolved.provider == Provider::Custom && resolved.custom.review, pending);
+}
+
+// 译后校对：把本轮新译出的条目交给同一模型复核，只把「确实要改」的修正写回去。
+// 只在自定义服务上做（deeplx 没有聊天接口；腾讯/小牛/阿里云没办法跑校对提示词）。
+std::vector<EnglishIme::TranslationResult> ReviewPending(const ResolvedProvider &resolved,
+                                                         const std::vector<PendingReview> &pending,
+                                                         const std::string &target_language,
+                                                         const std::string &provider_scope)
+{
+    std::vector<EnglishIme::TranslationResult> corrections;
+    if (resolved.provider != Provider::Custom || pending.empty() || resolved.custom.format == "deeplx")
+        return corrections;
+    for (const std::string source : {"zh", "en"})
+    {
+        // 词条与整句分开发：整句的校对要重写一整段，超时和词条不是一个量级。
+        for (const bool sentence : {false, true})
+        {
+            std::vector<const PendingReview *> group;
+            for (const auto &item : pending)
+            {
+                if (item.source == source && item.sentence == sentence)
+                    group.push_back(&item);
+            }
+            if (group.empty())
+                continue;
+            std::vector<std::string> texts;
+            std::vector<std::string> translations;
+            texts.reserve(group.size());
+            translations.reserve(group.size());
+            for (const auto *item : group)
+            {
+                texts.push_back(item->query.key);
+                translations.push_back(item->gloss);
+            }
+            const std::string target = source == "en" ? std::string("zh") : target_language;
+            const auto fixes =
+                CustomTranslation::ReviewTranslations(resolved.custom, texts, translations, source, target, sentence);
+            for (size_t i = 0; i < group.size() && i < fixes.size(); ++i)
+            {
+                if (fixes[i].empty())
+                    continue;
+                const std::string gloss = CloudTranslation::FormatGloss(fixes[i]);
+                if (gloss.empty() || gloss == group[i]->gloss)
+                    continue;
+                // 先过长度门再写缓存：否则内存里是校对版、词库里还是旧版，重开输入法就回退。
+                const bool chinese_to_english =
+                    group[i]->query.direction == EnglishIme::TranslationDirection::ChineseToEnglish;
+                const bool is_sentence = chinese_to_english && IsSentenceLike(group[i]->query.key);
+                if (!CloudTranslation::ShouldPersistGloss(group[i]->query.key, gloss,
+                                                          is_sentence ? kMaxPersistSentenceChars : kMaxPersistChars))
+                    continue;
+                // 校对结果回写：内存缓存 + 本地词库，下次同一个词直接给校对过的版本。
+                RememberPositive(Identity(group[i]->query, target_language, provider_scope), gloss);
+                PersistGloss(group[i]->query, gloss, target_language);
+                corrections.push_back({group[i]->query.key, group[i]->query.direction, gloss});
+            }
+        }
+    }
+    return corrections;
+}
+
+void ReviewLoop()
+{
+    while (g_running)
+    {
+        ReviewJob job;
+        {
+            std::unique_lock lock(g_review_mutex);
+            g_review_cv.wait(lock, [] { return !g_running || g_review_pending; });
+            if (!g_running)
+                break;
+            job = std::move(g_review_job);
+            g_review_job = ReviewJob{};
+            g_review_pending = false;
+        }
+        if (job.items.empty())
+            continue;
+        ResolvedProvider resolved;
+        resolved.provider = Provider::Custom;
+        resolved.custom = job.custom;
+        auto corrections = ReviewPending(resolved, job.items, job.target_language, job.provider_scope);
+        if (corrections.empty() || !g_running || !g_callback)
+            continue;
+        uint64_t generation = 0;
+        {
+            std::lock_guard lock(g_mutex);
+            generation = g_latest_generation;
+        }
+        if (!EnglishIme::IsTranslationCurrent(generation))
+            continue;
+        g_callback(std::move(corrections), generation);
+    }
 }
 
 void WorkerLoop()
@@ -387,25 +525,39 @@ void WorkerLoop()
             return true;
         };
         bool alive = true;
+        std::vector<PendingReview> pending;
         if (!en_zh.empty())
         {
-            TranslateGroup(*resolved, en_zh, "en", "zh", target_language, provider_scope, results);
+            TranslateGroup(*resolved, en_zh, "en", "zh", target_language, provider_scope, results, pending);
             alive = publish();
         }
         if (alive && !zh_target.empty())
         {
-            TranslateGroup(*resolved, zh_target, "zh", target_language, target_language, provider_scope, results);
+            TranslateGroup(*resolved, zh_target, "zh", target_language, target_language, provider_scope, results,
+                           pending);
             alive = publish();
         }
         // 整句单独一批：超时和输出上限都跟词条不一样，混在一个批次里会互相拖。
         if (alive && !zh_sentence.empty())
         {
             TranslateGroup(*resolved, zh_sentence, "zh", target_language, target_language, provider_scope, results,
-                           /*sentence=*/true);
+                           pending, /*sentence=*/true);
             alive = publish();
         }
-        if (!alive)
+        if (!alive || pending.empty())
             continue;
+        // 校对丢给独立线程，工作循环立刻回去等下一次输入，上屏延迟不受影响。
+        {
+            std::lock_guard review_lock(g_review_mutex);
+            if (g_review_job.items.size() + pending.size() > kMaxReviewBacklog)
+                g_review_job.items.clear(); // 积压过多说明用户一直在连打，丢掉旧的一批
+            g_review_job.items.insert(g_review_job.items.end(), pending.begin(), pending.end());
+            g_review_job.custom = resolved->custom;
+            g_review_job.target_language = target_language;
+            g_review_job.provider_scope = provider_scope;
+            g_review_pending = true;
+        }
+        g_review_cv.notify_one();
     }
 }
 } // namespace
@@ -421,6 +573,7 @@ void Start(const std::string &db_path, ApplyCallback apply_callback)
     g_callback = std::move(apply_callback);
     g_running = true;
     g_worker = std::thread(WorkerLoop);
+    g_review_worker = std::thread(ReviewLoop);
 }
 
 void Stop()
@@ -429,8 +582,11 @@ void Stop()
         return;
     g_running = false;
     g_cv.notify_all();
+    g_review_cv.notify_all();
     if (g_worker.joinable())
         g_worker.join();
+    if (g_review_worker.joinable())
+        g_review_worker.join();
     g_callback = {};
 }
 

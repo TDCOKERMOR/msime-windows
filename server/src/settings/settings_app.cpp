@@ -597,6 +597,7 @@ std::wstring BuildConfigMessage(bool refresh_skin_catalog)
             {"endpoint", custom_translation.endpoint},
             {"api_key", custom_translation.api_key},
             {"format", custom_translation.format},
+            {"review", custom_translation.review},
             {"model", custom_translation.model},
             {"prompt", custom_translation.prompt},
             {"prompt_id", custom_translation.prompt_id},
@@ -1002,6 +1003,10 @@ bool ApplyConfigUpdate(const json::object &data)
     }
     if (path == "custom_translation.enabled")
         return SetConfiguredCustomTranslationBool("enabled", json::value_to<bool>(data.at("value")));
+    // review 是布尔键：漏了这一行就会被下面的字符串分支接走，
+    // 值类型不匹配直接返回 false，设置页只能报「保存失败」。
+    if (path == "custom_translation.review")
+        return SetConfiguredCustomTranslationBool("review", json::value_to<bool>(data.at("value")));
     if (path.rfind("custom_translation.", 0) == 0)
     {
         const json::value &value = data.at("value");
