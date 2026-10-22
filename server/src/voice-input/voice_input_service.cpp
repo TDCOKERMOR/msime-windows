@@ -742,15 +742,6 @@ std::string Polish(const std::string &text, const VoiceInputConfig &config)
     if (!ShouldPolish(text, config))
         return text;
     const std::string polish_token = VoiceInput::ResolvePolishToken(config);
-    std::string payload;
-    try
-    {
-        payload = VoiceInput::BuildBatchPolish(text, config);
-    }
-    catch (...)
-    {
-        return text;
-    }
     // 设置页里的润色服务商可能是协议 id（responses / anthropic / gemini）：
     // Chat 沿用原来的厂商特判，其余三种用统一构造的四协议请求体。
     const auto wire = AiWire::FromId(config.polish_provider);

@@ -64,4 +64,23 @@ void PersistGloss(const Query &query, const std::string &gloss, const std::strin
     EnglishDictionary::upsert_gloss(db_path, chinese_to_english, query.key, gloss,
                                     chinese_to_english ? target_language : std::string{});
 }
+
+void PersistGlosses(const std::vector<GlossWrite> &writes, const std::string &target_language)
+{
+    const std::string &db_path = Internal::DbPath();
+    if (db_path.empty() || writes.empty())
+        return;
+    std::vector<EnglishDictionary::GlossEntry> entries;
+    entries.reserve(writes.size());
+    for (const auto &write : writes)
+    {
+        if (!ShouldPersist(write.query, write.gloss))
+            continue;
+        const bool chinese_to_english = write.query.direction == Direction::ChineseToEnglish;
+        entries.push_back({chinese_to_english, write.query.key, write.gloss,
+                           chinese_to_english ? target_language : std::string{}});
+    }
+    if (!entries.empty())
+        EnglishDictionary::upsert_glosses(db_path, entries);
+}
 } // namespace Translate

@@ -96,11 +96,9 @@ std::optional<RuntimeConfig> Resolve(const TranslationConfig &config)
         resolved.custom.api_key = CloudTranslation::TrimSecret(config.custom.api_key);
         resolved.custom.format = config.custom.format;
         resolved.custom.model = config.custom.model.empty() ? std::string("gpt-4o-mini") : config.custom.model;
+        // 提示词槽已在配置加载时按 prompt_id 展开成 prompt，这里不再搬运槽本身：
+        // CustomTranslation::Config 只带最终生效的那一份。
         resolved.custom.prompt = config.custom.prompt;
-        resolved.custom.prompt_id = config.custom.prompt_id;
-        resolved.custom.prompt_custom_1 = config.custom.prompt_custom_1;
-        resolved.custom.prompt_custom_2 = config.custom.prompt_custom_2;
-        resolved.custom.prompt_custom_3 = config.custom.prompt_custom_3;
         resolved.custom.review = config.custom.review;
         if (!CustomTranslation::IsSupportedEndpoint(resolved.custom.endpoint))
             return std::nullopt;
