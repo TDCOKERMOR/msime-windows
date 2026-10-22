@@ -1765,12 +1765,9 @@ VisualPtr BuildInputPage(PageContext &context)
                                                   {"gemini", L"Google Gemini"}}),
                                          language);
         // 思考强度只留四档：中转模型的默认思考会吃光短请求的预算。
-        auto customThinking = BindDropdown(context, "custom_translation.thinking",
-                                           Options({{"disabled", L"关闭"},
-                                                    {"low", L"低"},
-                                                    {"high", L"高"},
-                                                    {"max", L"最高"}}),
-                                           language);
+        auto customThinking =
+            BindDropdown(context, "custom_translation.thinking",
+                         Options({{"disabled", L"关闭"}, {"low", L"低"}, {"high", L"高"}, {"max", L"最高"}}), language);
         s->thinkingDropdown = customThinking;
         // 提示词三槽：切换只改当前生效的那一个。
         auto promptSlot = std::make_shared<Dropdown>(
@@ -1793,20 +1790,18 @@ VisualPtr BuildInputPage(PageContext &context)
         auto modelField =
             field("customTranslationModel", "custom_translation.model", L"模型", L"deepseek-flash", false);
         auto modelRow = blockInput(LanguageRow(L"模型", L"", modelField));
-        auto custom = Col({heading(L"自定义服务", L"接口地址、模型与协议格式按服务商文档填；API Key 可留空"),
-                           blockInput(grid({{field("customTranslationEndpoint", "custom_translation.endpoint",
-                                                   L"接口地址", L"https://api.deepseek.com", false),
-                                             true},
-                                            {field("customTranslationApiKey", "custom_translation.api_key",
-                                                   L"API Key（可选，以 Bearer Token 发送）", L"留空表示不鉴权", true),
-                                             true}})),
-                           modelRow,
-                           blockInput(LanguageRow(L"协议格式", L"按服务商文档选择；选错会直接拿到 4xx", customFormat)),
-                           blockInput(LanguageRow(L"思考强度", L"中转模型默认思考会吃光短请求的预算，选「关闭」",
-                                                  customThinking)),
-                           blockInput(LanguageRow(L"提示词槽位", L"三个槽各存一份提示词，切换只改当前生效的那一个",
-                                                  promptSlot)),
-                           blockInput(std::static_pointer_cast<msimeui::Visual>(s->translationPrompt))});
+        auto custom = Col(
+            {heading(L"自定义服务", L"接口地址、模型与协议格式按服务商文档填；API Key 可留空"),
+             blockInput(grid({{field("customTranslationEndpoint", "custom_translation.endpoint", L"接口地址",
+                                     L"https://api.deepseek.com", false),
+                               true},
+                              {field("customTranslationApiKey", "custom_translation.api_key",
+                                     L"API Key（可选，以 Bearer Token 发送）", L"留空表示不鉴权", true),
+                               true}})),
+             modelRow, blockInput(LanguageRow(L"协议格式", L"按服务商文档选择；选错会直接拿到 4xx", customFormat)),
+             blockInput(LanguageRow(L"思考强度", L"中转模型默认思考会吃光短请求的预算，选「关闭」", customThinking)),
+             blockInput(LanguageRow(L"提示词槽位", L"三个槽各存一份提示词，切换只改当前生效的那一个", promptSlot)),
+             blockInput(std::static_pointer_cast<msimeui::Visual>(s->translationPrompt))});
         TextStyle warningStyle;
         warningStyle.size = kFontCaption;
         s->warning = std::make_shared<Label>(L"请填写接口地址与模型后使用在线翻译", warningStyle);
@@ -1832,8 +1827,7 @@ VisualPtr BuildInputPage(PageContext &context)
                  review)),
              std::make_shared<Divider>(Divider::Kind::Option),
              blockInput(LanguageRow(L"目标语种", L"英语优先使用本地词库；本地未命中时使用所选在线服务", target)),
-             std::make_shared<Divider>(Divider::Kind::Option), custom, s->warningBox,
-             s->credentialTest->View()});
+             std::make_shared<Divider>(Divider::Kind::Option), custom, s->warningBox, s->credentialTest->View()});
         s->translationOptions = std::make_shared<OpacityBox>(options);
         s->translationOptions->SetMargin({0.0f, 8.0f, 0.0f, 0.0f});
         master->SetOnChanged([s, model](bool on) {
@@ -2237,4 +2231,3 @@ VisualPtr BuildInputPage(PageContext &context)
     return page.Build();
 }
 } // namespace native_settings
-

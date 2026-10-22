@@ -314,8 +314,7 @@ std::string ReasoningEffortOf(const CustomTranslation::Config &config)
 }
 
 nlohmann::json BuildWireBody(Wire wire, const std::string &model, const std::string &system, const std::string &text,
-                             int max_tokens, bool disable_thinking = false,
-                             const std::string &reasoning_effort = {})
+                             int max_tokens, bool disable_thinking = false, const std::string &reasoning_effort = {})
 {
     using nlohmann::json;
     switch (wire)
@@ -334,14 +333,13 @@ nlohmann::json BuildWireBody(Wire wire, const std::string &model, const std::str
                 {"contents", json::array({{{"role", "user"}, {"parts", json::array({{{"text", text}}})}}})},
                 {"generationConfig", {{"temperature", 0}, {"maxOutputTokens", max_tokens}}}};
     case Wire::Chat:
-    default:
-    {
+    default: {
         json body = {{"model", model},
                      {"temperature", 0},
                      {"max_tokens", max_tokens},
                      {"stream", false},
-                     {"messages", json::array({{{"role", "system"}, {"content", system}},
-                                               {{"role", "user"}, {"content", text}}})}};
+                     {"messages",
+                      json::array({{{"role", "system"}, {"content", system}}, {{"role", "user"}, {"content", text}}})}};
         if (disable_thinking)
             body["thinking"] = {{"type", "disabled"}};
         else if (!reasoning_effort.empty())
@@ -521,10 +519,9 @@ std::vector<std::string> TextTranslateBatchOpenAi(const CustomTranslation::Confi
             results.resize(i);
             break;
         }
-        const std::string payload =
-            BuildWireBody(wire, config.model, system_prompt, texts[i], max_tokens, ShouldDisableThinking(config),
-                          ReasoningEffortOf(config))
-                .dump();
+        const std::string payload = BuildWireBody(wire, config.model, system_prompt, texts[i], max_tokens,
+                                                  ShouldDisableThinking(config), ReasoningEffortOf(config))
+                                        .dump();
         ResponseBuffer response;
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.c_str());
         curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(payload.size()));
